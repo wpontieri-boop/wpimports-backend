@@ -571,6 +571,37 @@ def ml_items():
             })
 # O Multiget do Mercado Livre aceita no máximo
 # 20 itens por chamada.
+               # Busca os detalhes dos anúncios em lotes de até 20
+        raw_items = []
+
+        for i in range(0, len(item_ids), 20):
+
+            batch_ids = item_ids[i:i + 20]
+
+            items_response = requests.get(
+                "https://api.mercadolibre.com/items",
+                headers={
+                    "Authorization": f"Bearer {access_token}"
+                },
+                params={
+                    "ids": ",".join(batch_ids),
+                    "attributes": (
+                        "id,title,price,available_quantity,"
+                        "status,seller_custom_field,permalink,"
+                        "thumbnail,listing_type_id"
+                    )
+                },
+                timeout=30
+            )
+
+            if items_response.status_code != 200:
+                return jsonify({
+                    "success": False,
+                    "error": "items_details_failed",
+                    "status_code": items_response.status_code
+                }), items_response.status_code
+
+            raw_items.extend(items_response.json())
         items = []
 
         for entry in raw_items:
