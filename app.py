@@ -488,6 +488,298 @@ def ml_status():
 # NOTIFICAÇÕES MERCADO LIVRE
 # ============================================================
 # ============================================================
+# SINCRONIZAÇÃO DOS ANÚNCIOS COM O POSTGRESQL
+# ============================================================
+
+def init_ml_items_table():
+
+    with get_db_connection() as conn:
+        with conn.cursor() as cur:
+
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS ml_items (
+                    item_id TEXT PRIMARY KEY,
+                    seller_id BIGINT NOT NULL,
+                    title TEXT,
+                    price NUMERIC(14,2),
+                    stock INTEGER,
+                    status TEXT,
+                    sku TEXT,
+                    listing_type TEXT,
+                    permalink TEXT,
+                    thumbnail TEXT,
+                    synced_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                )
+            """)
+
+
+def save_ml_items_to_db(items, seller_id):
+
+    init_ml_items_table()
+
+    with get_db_connection() as conn:
+        with conn.cursor() as cur:
+
+            for item in items:
+
+                cur.execute("""
+                    INSERT INTO ml_items (
+                        item_id,
+                        seller_id,
+                        title,
+                        price,
+                        stock,
+                        status,
+                        sku,
+                        listing_type,
+                        permalink,
+                        thumbnail,
+                        synced_at
+                    )
+                    VALUES (
+                        %s, %s, %s, %s, %s,
+                        %s, %s, %s, %s, %s,
+                        NOW()
+                    )
+
+                    ON CONFLICT (item_id)
+                    DO UPDATE SET
+                        seller_id = EXCLUDED.seller_id,
+                        title = EXCLUDED.title,
+                        price = EXCLUDED.price,
+                        stock = EXCLUDED.stock,
+                        status = EXCLUDED.status,
+                        sku = EXCLUDED.sku,
+                        listing_type = EXCLUDED.listing_type,
+                        permalink = EXCLUDED.permalink,
+                        thumbnail = EXCLUDED.thumbnail,
+                        synced_at = NOW()
+                """, (
+                    item.get("id"),
+                    seller_id,
+                    item.get("title"),
+                    item.get("price"),
+                    item.get("available_quantity"),
+                    item.get("status"),
+                    item.get("seller_custom_field"),
+                    item.get("listing_type_id"),
+                    item.get("permalink"),
+                    item.get("thumbnail")
+                ))
+
+
+@app.route("/ml/sync-items")
+def ml_sync_items():
+
+    try:
+
+        access_token = get_valid_access_token()
+
+        if not access_token:
+            return jsonify({
+                "success": False,
+                "error": "mercado_livre_not_connected"
+            }), 503
+
+        token_record = get_saved_tokens()
+
+        if not token_record:
+            return jsonify({
+                "success": False,
+                "error": "seller_not_found"
+            }), 503
+
+        seller_id = token_record[0]
+
+        offset = 0
+        limit = 50
+
+        total_found = 0
+        total_saved = 0
+
+        while True:
+
+            search_response = requests.get(
+                f"https://api.mercadolibre.com/users/{seller_id}/items/search",
+                headers={
+                    "Authorization": f"Bearer {access_token}"
+                },
+                params={
+                    "limit": limit,
+                    "offset": offset
+                },
+                timeout=30
+            )
+
+            if search_response.status_code != 200:
+                return jsonify({
+                    "success": False,
+                    "error": "items_search_failed",
+                    "status_code": search_response.status_code
+                }), search_response.status_code
+
+            search_data = search_response.json()
+
+            item_ids = search_data.get("results", [])
+            paging = search_data.get("paging", {})
+
+            total_found = paging.get(
+                "total",
+                total_found
+            )
+
+            if not item_ids:
+                break
+
+            raw_items = []
+
+            # Mercado Livre permite até 20 itens por Multiget
+            for i in range(0, len(item_ids), 20):
+
+                batch_ids = item_ids[i:i + 20]
+
+                details_response = requests.get(
+                    "https://api.mercadolibre.com/items",
+                    headers={
+                        "Authorization":
+                            f"Bearer {access_token}"
+                    },
+                    params={
+                        "ids": ",".join(batch_ids),
+                        "attributes": (
+                            "id,title,price,available_quantity,"
+                            "status,seller_custom_field,permalink,"
+                            "thumbnail,listing_type_id"
+                        )
+                    },
+                    timeout=30
+                )
+
+                if details_response.status_code != 200:
+                    return jsonify({
+                        "success": False,
+                        "error": "items_details_failed",
+                        "status_code":
+                            details_response.status_code
+                    }), details_response.status_code
+
+                raw_items.extend(
+                    details_response.json()
+                )
+
+            items_to_save = []
+
+            for entry in raw_items:
+
+                if entry.get("code") != 200:
+                    continue
+
+                body = entry.get("body", {})
+
+                if body.get("id"):
+                    items_to_save.append(body)
+
+            save_ml_items_to_db(
+                items_to_save,
+                seller_id
+            )
+
+            total_saved += len(items_to_save)
+
+            offset += len(item_ids)
+
+            if offset >= total_found:
+                break
+
+        return jsonify({
+            "success": True,
+            "message":
+                "Anuncios sincronizados com o PostgreSQL.",
+            "total_found": total_found,
+            "synced_items": total_saved
+        })
+
+    except Exception as e:
+
+        return jsonify({
+            "success": False,
+            "error": "sync_failed",
+            "detail": str(e)
+        }), 500
+
+
+# ============================================================
+# VISUALIZAR ANÚNCIOS SALVOS NO BANCO
+# ============================================================
+
+@app.route("/db/items")
+def db_items():
+
+    try:
+
+        init_ml_items_table()
+
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+
+                cur.execute("""
+                    SELECT
+                        item_id,
+                        title,
+                        price,
+                        stock,
+                        status,
+                        sku,
+                        synced_at
+                    FROM ml_items
+                    ORDER BY synced_at DESC
+                    LIMIT 50
+                """)
+
+                rows = cur.fetchall()
+
+                cur.execute("""
+                    SELECT COUNT(*)
+                    FROM ml_items
+                """)
+
+                total = cur.fetchone()[0]
+
+        items = []
+
+        for row in rows:
+
+            items.append({
+                "id": row[0],
+                "title": row[1],
+                "price":
+                    float(row[2])
+                    if row[2] is not None
+                    else None,
+                "stock": row[3],
+                "status": row[4],
+                "sku": row[5],
+                "synced_at":
+                    row[6].isoformat()
+                    if row[6]
+                    else None
+            })
+
+        return jsonify({
+            "success": True,
+            "total_saved": total,
+            "count": len(items),
+            "items": items
+        })
+
+    except Exception as e:
+
+        return jsonify({
+            "success": False,
+            "error": "database_items_failed",
+            "detail": str(e)
+        }), 500
+# ============================================================
 # ANÚNCIOS DO MERCADO LIVRE - SOMENTE LEITURA
 # ============================================================
 
