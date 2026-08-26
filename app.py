@@ -487,7 +487,151 @@ def ml_status():
 # ============================================================
 # NOTIFICAÇÕES MERCADO LIVRE
 # ============================================================
+# ============================================================
+# ANÚNCIOS DO MERCADO LIVRE - SOMENTE LEITURA
+# ============================================================
 
+@app.route("/ml/items")
+def ml_items():
+
+    try:
+        access_token = get_valid_access_token()
+
+        if not access_token:
+            return jsonify({
+                "success": False,
+                "error": "mercado_livre_not_connected"
+            }), 503
+
+        token_record = get_saved_tokens()
+
+        if not token_record:
+            return jsonify({
+                "success": False,
+                "error": "seller_not_found"
+            }), 503
+
+        user_id = token_record[0]
+
+        # Quantidade máxima por página
+        try:
+            limit = int(request.args.get("limit", 50))
+        except ValueError:
+            limit = 50
+
+        limit = max(1, min(limit, 50))
+
+        try:
+            offset = int(request.args.get("offset", 0))
+        except ValueError:
+            offset = 0
+
+        offset = max(0, offset)
+
+        status = request.args.get("status")
+
+        params = {
+            "limit": limit,
+            "offset": offset
+        }
+
+        if status:
+            params["status"] = status
+
+        search_response = requests.get(
+            f"https://api.mercadolibre.com/users/{user_id}/items/search",
+            headers={
+                "Authorization": f"Bearer {access_token}"
+            },
+            params=params,
+            timeout=30
+        )
+
+        if search_response.status_code != 200:
+            return jsonify({
+                "success": False,
+                "error": "items_search_failed",
+                "status_code": search_response.status_code
+            }), search_response.status_code
+
+        search_data = search_response.json()
+
+        item_ids = search_data.get("results", [])
+        paging = search_data.get("paging", {})
+
+        if not item_ids:
+            return jsonify({
+                "success": True,
+                "seller_id": user_id,
+                "total": paging.get("total", 0),
+                "offset": offset,
+                "limit": limit,
+                "count": 0,
+                "items": []
+            })
+
+        items_response = requests.get(
+            "https://api.mercadolibre.com/items",
+            headers={
+                "Authorization": f"Bearer {access_token}"
+            },
+            params={
+                "ids": ",".join(item_ids),
+                "attributes": (
+                    "id,title,price,available_quantity,"
+                    "status,seller_custom_field,permalink,"
+                    "thumbnail,listing_type_id"
+                )
+            },
+            timeout=30
+        )
+
+        if items_response.status_code != 200:
+            return jsonify({
+                "success": False,
+                "error": "items_details_failed",
+                "status_code": items_response.status_code
+            }), items_response.status_code
+
+        raw_items = items_response.json()
+
+        items = []
+
+        for entry in raw_items:
+
+            if entry.get("code") != 200:
+                continue
+
+            item = entry.get("body", {})
+
+            items.append({
+                "id": item.get("id"),
+                "title": item.get("title"),
+                "price": item.get("price"),
+                "stock": item.get("available_quantity"),
+                "status": item.get("status"),
+                "sku": item.get("seller_custom_field"),
+                "listing_type": item.get("listing_type_id"),
+                "permalink": item.get("permalink"),
+                "thumbnail": item.get("thumbnail")
+            })
+
+        return jsonify({
+            "success": True,
+            "seller_id": user_id,
+            "total": paging.get("total", len(items)),
+            "offset": paging.get("offset", offset),
+            "limit": paging.get("limit", limit),
+            "count": len(items),
+            "items": items
+        })
+
+    except Exception as e:
+        return jsonify({
+            "success": False,
+            "error": "internal_error",
+            "detail": str(e)
+        }), 500
 @app.route(
     "/notifications",
     methods=["GET", "POST"]
