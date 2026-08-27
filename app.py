@@ -622,12 +622,11 @@ def ml_status():
 # ============================================================
 
 def init_erp_tables():
-
     with get_db_connection() as conn:
         with conn.cursor() as cur:
 
             # Produto central / SKU
-             cur.execute("""
+            cur.execute("""
                 CREATE TABLE IF NOT EXISTS products (
                     id BIGSERIAL PRIMARY KEY,
                     internal_sku TEXT UNIQUE NOT NULL,
@@ -666,30 +665,33 @@ def init_erp_tables():
                     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
                 )
-                """)
+            """)
+
+            # IMEI 1 não pode se repetir
             cur.execute("""
-                CREATE UNIQUE INDEX IF NOT EXISTS
-                product_units_imei1_unique
+                CREATE UNIQUE INDEX IF NOT EXISTS product_units_imei1_unique
                 ON product_units (imei_1)
                 WHERE imei_1 IS NOT NULL
                   AND imei_1 <> ''
             """)
-    
+
+            # IMEI 2 não pode se repetir
             cur.execute("""
-                CREATE UNIQUE INDEX IF NOT EXISTS
-                product_units_imei2_unique
+                CREATE UNIQUE INDEX IF NOT EXISTS product_units_imei2_unique
                 ON product_units (imei_2)
                 WHERE imei_2 IS NOT NULL
                   AND imei_2 <> ''
             """)
-    
+
+            # Número de série não pode se repetir
             cur.execute("""
-                CREATE UNIQUE INDEX IF NOT EXISTS
-                product_units_serial_unique
+                CREATE UNIQUE INDEX IF NOT EXISTS product_units_serial_unique
                 ON product_units (serial_number)
                 WHERE serial_number IS NOT NULL
                   AND serial_number <> ''
-            """)           
+            """)
+
+            # Compatibilidade com banco já criado
             cur.execute("""
                 ALTER TABLE products
                 ADD COLUMN IF NOT EXISTS condition_type TEXT
@@ -705,6 +707,7 @@ def init_erp_tables():
                 DROP COLUMN IF EXISTS product_condition
             """)
 
+            # Tipos de condição permitidos
             cur.execute("""
                 ALTER TABLE products
                 DROP CONSTRAINT IF EXISTS products_condition_type_check
@@ -723,6 +726,7 @@ def init_erp_tables():
                 )
             """)
 
+            # Classificações permitidas
             cur.execute("""
                 ALTER TABLE products
                 DROP CONSTRAINT IF EXISTS products_condition_grade_check
@@ -746,6 +750,9 @@ def init_erp_tables():
                 ALTER COLUMN condition_type SET NOT NULL
             """)
 
+            # Regra:
+            # NOVO / CAIXA ABERTA = sem classificação
+            # RECONDICIONADO / SEMINOVO = Excelente, Bom ou Aceitável
             cur.execute("""
                 ALTER TABLE products
                 DROP CONSTRAINT IF EXISTS products_condition_rules_check
@@ -770,14 +777,13 @@ def init_erp_tables():
                     )
                 )
             """)
-           
+
             # Anúncios dos marketplaces
             cur.execute("""
                 CREATE TABLE IF NOT EXISTS marketplace_listings (
                     id BIGSERIAL PRIMARY KEY,
 
                     marketplace TEXT NOT NULL,
-
                     external_listing_id TEXT NOT NULL,
 
                     product_id BIGINT
