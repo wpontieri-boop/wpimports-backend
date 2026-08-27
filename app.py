@@ -648,7 +648,7 @@ def init_erp_tables():
                     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
                 )
             """)
-                        cur.execute("""
+            cur.execute("""
                 ALTER TABLE products
                 ADD COLUMN IF NOT EXISTS condition_type TEXT
             """)
