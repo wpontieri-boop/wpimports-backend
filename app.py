@@ -645,7 +645,7 @@ def init_erp_tables():
             """)
 
             # Unidade física individual
-             cur.execute("""
+            cur.execute("""
                 CREATE TABLE IF NOT EXISTS product_units (
                     id BIGSERIAL PRIMARY KEY,
                     unit_code TEXT UNIQUE NOT NULL,
@@ -667,7 +667,7 @@ def init_erp_tables():
                     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
                 )
                 """)
-             cur.execute("""
+            cur.execute("""
                 CREATE UNIQUE INDEX IF NOT EXISTS
                 product_units_imei1_unique
                 ON product_units (imei_1)
