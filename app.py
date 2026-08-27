@@ -1041,7 +1041,7 @@ def admin_products():
                 "do Mercado Livre."
             )
 
-        else:
+    else:
 
             try:
 
