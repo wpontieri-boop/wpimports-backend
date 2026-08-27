@@ -2,7 +2,9 @@ from flask import Flask, request, jsonify, redirect
 import os
 import requests
 import psycopg
+import hmac
 
+from functools import wraps
 from urllib.parse import urlencode
 from datetime import datetime, timezone, timedelta
 
@@ -18,6 +20,55 @@ ML_CLIENT_ID = os.getenv("ML_CLIENT_ID")
 ML_CLIENT_SECRET = os.getenv("ML_CLIENT_SECRET")
 ML_REDIRECT_URI = os.getenv("ML_REDIRECT_URI")
 DATABASE_URL = os.getenv("DATABASE_URL")
+ADMIN_USER = os.getenv("ADMIN_USER")
+ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD")
+
+# ============================================================
+# SEGURANÇA ADMINISTRATIVA
+# ============================================================
+
+def require_admin(f):
+
+    @wraps(f)
+    def decorated(*args, **kwargs):
+
+        auth = request.authorization
+
+        user_ok = (
+            auth
+            and ADMIN_USER
+            and hmac.compare_digest(
+                auth.username or "",
+                ADMIN_USER
+            )
+        )
+
+        password_ok = (
+            auth
+            and ADMIN_PASSWORD
+            and hmac.compare_digest(
+                auth.password or "",
+                ADMIN_PASSWORD
+            )
+        )
+
+        if not user_ok or not password_ok:
+
+            return (
+                jsonify({
+                    "success": False,
+                    "error": "unauthorized"
+                }),
+                401,
+                {
+                    "WWW-Authenticate":
+                        'Basic realm="WP Imports Admin"'
+                }
+            )
+
+        return f(*args, **kwargs)
+
+    return decorated
 
 
 # ============================================================
@@ -217,6 +268,68 @@ def get_valid_access_token():
         token_record
     )
 
+# ============================================================
+# PROTEÇÃO ADMINISTRATIVA DO WP IMPORTS HUB
+# ============================================================
+
+ADMIN_PROTECTED_PATHS = {
+    "/ml/connect",
+    "/ml/status",
+    "/ml/items",
+    "/ml/sync-items",
+
+    "/db/status",
+    "/db/items",
+
+    "/erp/status",
+    "/erp/import-ml-listings",
+    "/erp/unlinked-listings",
+}
+
+
+@app.before_request
+def protect_admin_routes():
+
+    # Rotas públicas continuam funcionando normalmente
+    if request.path not in ADMIN_PROTECTED_PATHS:
+        return None
+
+    admin_api_key = os.getenv("ADMIN_API_KEY")
+
+    if not admin_api_key:
+        return jsonify({
+            "success": False,
+            "error": "admin_key_not_configured"
+        }), 503
+
+    auth = request.authorization
+
+    valid_login = (
+        auth
+        and auth.username == "admin"
+        and hmac.compare_digest(
+            auth.password or "",
+            admin_api_key
+        )
+    )
+
+    if not valid_login:
+
+        response = jsonify({
+            "success": False,
+            "error": "unauthorized",
+            "message": "Acesso administrativo necessario."
+        })
+
+        response.status_code = 401
+
+        response.headers["WWW-Authenticate"] = (
+            'Basic realm="WP Imports Hub Admin"'
+        )
+
+        return response
+
+    return None
 
 # ============================================================
 # HOME
