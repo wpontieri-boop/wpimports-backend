@@ -485,6 +485,127 @@ def ml_status():
 
 
 # ============================================================
+# ERP CENTRAL - PRODUTOS, UNIDADES E ANÚNCIOS
+# ============================================================
+
+def init_erp_tables():
+
+    with get_db_connection() as conn:
+        with conn.cursor() as cur:
+
+            # Produto central / SKU
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS products (
+                    id BIGSERIAL PRIMARY KEY,
+                    internal_sku TEXT UNIQUE NOT NULL,
+                    name TEXT NOT NULL,
+                    brand TEXT,
+                    model TEXT,
+                    storage TEXT,
+                    color TEXT,
+                    product_condition TEXT,
+                    active BOOLEAN NOT NULL DEFAULT TRUE,
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                )
+            """)
+
+            # Unidade física individual
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS product_units (
+                    id BIGSERIAL PRIMARY KEY,
+                    unit_code TEXT UNIQUE NOT NULL,
+                    product_id BIGINT NOT NULL
+                        REFERENCES products(id),
+
+                    imei_1 TEXT,
+                    imei_2 TEXT,
+                    serial_number TEXT,
+
+                    battery_health INTEGER,
+                    cost NUMERIC(14,2),
+
+                    status TEXT NOT NULL DEFAULT 'EM_ESTOQUE',
+
+                    qr_token TEXT UNIQUE NOT NULL,
+
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                )
+            """)
+
+            # Anúncios dos marketplaces
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS marketplace_listings (
+                    id BIGSERIAL PRIMARY KEY,
+
+                    marketplace TEXT NOT NULL,
+
+                    external_listing_id TEXT NOT NULL,
+
+                    product_id BIGINT
+                        REFERENCES products(id),
+
+                    listing_type TEXT,
+                    listing_role TEXT,
+                    status TEXT,
+
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+                    UNIQUE (
+                        marketplace,
+                        external_listing_id
+                    )
+                )
+            """)
+
+
+# ============================================================
+# STATUS DA ESTRUTURA CENTRAL DO ERP
+# ============================================================
+
+@app.route("/erp/status")
+def erp_status():
+
+    try:
+
+        init_erp_tables()
+
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+
+                cur.execute("SELECT COUNT(*) FROM products")
+                products_count = cur.fetchone()[0]
+
+                cur.execute(
+                    "SELECT COUNT(*) FROM product_units"
+                )
+                units_count = cur.fetchone()[0]
+
+                cur.execute(
+                    "SELECT COUNT(*) FROM marketplace_listings"
+                )
+                listings_count = cur.fetchone()[0]
+
+        return jsonify({
+            "success": True,
+            "erp": "WP Imports Hub",
+            "database": "postgresql",
+            "products": products_count,
+            "units": units_count,
+            "marketplace_listings": listings_count
+        })
+
+    except Exception as e:
+
+        return jsonify({
+            "success": False,
+            "error": "erp_database_error",
+            "detail": str(e)
+        }), 500
+
+# ============================================================
 # NOTIFICAÇÕES MERCADO LIVRE
 # ============================================================
 # ============================================================
