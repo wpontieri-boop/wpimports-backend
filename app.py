@@ -606,6 +606,85 @@ def erp_status():
         }), 500
 
 # ============================================================
+# IMPORTAR ANÚNCIOS ML PARA A ESTRUTURA CENTRAL DO ERP
+# ============================================================
+
+@app.route("/erp/import-ml-listings")
+def import_ml_listings():
+
+    try:
+
+        init_erp_tables()
+        init_ml_items_table()
+
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+
+                cur.execute("""
+                    SELECT
+                        item_id,
+                        listing_type,
+                        status
+                    FROM ml_items
+                    ORDER BY item_id
+                """)
+
+                rows = cur.fetchall()
+
+                imported = 0
+
+                for row in rows:
+
+                    item_id = row[0]
+                    listing_type = row[1]
+                    status = row[2]
+
+                    cur.execute("""
+                        INSERT INTO marketplace_listings (
+                            marketplace,
+                            external_listing_id,
+                            listing_type,
+                            status,
+                            updated_at
+                        )
+                        VALUES (
+                            'mercado_livre',
+                            %s,
+                            %s,
+                            %s,
+                            NOW()
+                        )
+
+                        ON CONFLICT (
+                            marketplace,
+                            external_listing_id
+                        )
+                        DO UPDATE SET
+                            listing_type = EXCLUDED.listing_type,
+                            status = EXCLUDED.status,
+                            updated_at = NOW()
+                    """, (
+                        item_id,
+                        listing_type,
+                        status
+                    ))
+
+                    imported += 1
+
+        return jsonify({
+            "success": True,
+            "marketplace": "mercado_livre",
+            "imported_listings": imported
+        })
+
+    except Exception as e:
+
+        return jsonify({
+            "success": False,
+            "error": "ml_listings_import_failed",
+            "detail": str(e)
+        }), 500
+# ============================================================
 # NOTIFICAÇÕES MERCADO LIVRE
 # ============================================================
 # ============================================================
