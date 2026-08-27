@@ -627,7 +627,7 @@ def init_erp_tables():
         with conn.cursor() as cur:
 
             # Produto central / SKU
-            cur.execute("""
+             cur.execute("""
                 CREATE TABLE IF NOT EXISTS products (
                     id BIGSERIAL PRIMARY KEY,
                     internal_sku TEXT UNIQUE NOT NULL,
@@ -645,7 +645,7 @@ def init_erp_tables():
             """)
 
             # Unidade física individual
-            cur.execute("""
+             cur.execute("""
                 CREATE TABLE IF NOT EXISTS product_units (
                     id BIGSERIAL PRIMARY KEY,
                     unit_code TEXT UNIQUE NOT NULL,
