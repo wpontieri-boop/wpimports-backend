@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify, redirect
+from flask import Flask, request, jsonify, redirect, render_template_string
 import os
 import requests
 import psycopg
@@ -281,6 +281,7 @@ ADMIN_PROTECTED_PATHS = {
     "/db/status",
     "/db/items",
 
+    "/admin/products", 
     "/erp/status",
     "/erp/import-ml-listings",
     "/erp/unlinked-listings",
@@ -872,6 +873,746 @@ def erp_unlinked_listings():
             "error": "unlinked_listings_failed",
             "detail": str(e)
         }), 500
+
+# ============================================================
+# WP IMPORTS HUB - TELA DE PRODUTOS CENTRAIS
+# ============================================================
+
+@app.route("/admin/products", methods=["GET", "POST"])
+def admin_products():
+
+    init_erp_tables()
+    init_ml_items_table()
+
+    error = None
+
+    if request.method == "POST":
+
+        internal_sku = (
+            request.form.get("internal_sku") or ""
+        ).strip()
+
+        name = (
+            request.form.get("name") or ""
+        ).strip()
+
+        brand = (
+            request.form.get("brand") or ""
+        ).strip() or None
+
+        model = (
+            request.form.get("model") or ""
+        ).strip() or None
+
+        storage = (
+            request.form.get("storage") or ""
+        ).strip() or None
+
+        color = (
+            request.form.get("color") or ""
+        ).strip() or None
+
+        product_condition = (
+            request.form.get("product_condition") or ""
+        ).strip() or None
+
+        listing_ids = request.form.getlist(
+            "listing_ids"
+        )
+
+        if not internal_sku:
+            error = "Informe o SKU interno."
+
+        elif not name:
+            error = "Informe o nome do produto."
+
+        elif not listing_ids:
+            error = (
+                "Selecione pelo menos um anúncio "
+                "do Mercado Livre."
+            )
+
+        else:
+
+            try:
+
+                with get_db_connection() as conn:
+                    with conn.cursor() as cur:
+
+                        cur.execute("""
+                            INSERT INTO products (
+                                internal_sku,
+                                name,
+                                brand,
+                                model,
+                                storage,
+                                color,
+                                product_condition,
+                                updated_at
+                            )
+                            VALUES (
+                                %s, %s, %s, %s,
+                                %s, %s, %s, NOW()
+                            )
+                            RETURNING id
+                        """, (
+                            internal_sku,
+                            name,
+                            brand,
+                            model,
+                            storage,
+                            color,
+                            product_condition
+                        ))
+
+                        product_id = cur.fetchone()[0]
+
+                        cur.execute("""
+                            UPDATE marketplace_listings
+
+                            SET
+                                product_id = %s,
+                                updated_at = NOW()
+
+                            WHERE
+                                marketplace = 'mercado_livre'
+                                AND product_id IS NULL
+                                AND external_listing_id = ANY(%s)
+                        """, (
+                            product_id,
+                            listing_ids
+                        ))
+
+                        linked_count = cur.rowcount
+
+                return redirect(
+                    "/admin/products"
+                    f"?created={product_id}"
+                    f"&linked={linked_count}"
+                )
+
+            except psycopg.errors.UniqueViolation:
+
+                error = (
+                    "Esse SKU interno já existe. "
+                    "Escolha outro SKU."
+                )
+
+            except Exception as e:
+
+                error = f"Erro ao criar produto: {str(e)}"
+
+    created = request.args.get("created")
+    linked = request.args.get("linked")
+
+    with get_db_connection() as conn:
+        with conn.cursor() as cur:
+
+            cur.execute("""
+                SELECT
+                    ml.external_listing_id,
+                    mi.title,
+                    mi.price,
+                    mi.stock,
+                    mi.status,
+                    mi.sku,
+                    ml.listing_type,
+                    mi.permalink
+
+                FROM marketplace_listings ml
+
+                LEFT JOIN ml_items mi
+                    ON mi.item_id =
+                       ml.external_listing_id
+
+                WHERE
+                    ml.marketplace = 'mercado_livre'
+                    AND ml.product_id IS NULL
+
+                ORDER BY
+                    mi.title ASC NULLS LAST,
+                    ml.external_listing_id ASC
+            """)
+
+            rows = cur.fetchall()
+
+            cur.execute("""
+                SELECT COUNT(*)
+                FROM products
+            """)
+
+            products_count = cur.fetchone()[0]
+
+    listings = []
+
+    for row in rows:
+
+        listings.append({
+            "listing_id": row[0],
+            "title": row[1],
+            "price":
+                float(row[2])
+                if row[2] is not None
+                else None,
+            "stock": row[3],
+            "status": row[4],
+            "sku": row[5],
+            "listing_type": row[6],
+            "permalink": row[7]
+        })
+
+    html = """
+    <!DOCTYPE html>
+
+    <html lang="pt-BR">
+
+    <head>
+
+        <meta charset="UTF-8">
+
+        <meta
+            name="viewport"
+            content="width=device-width, initial-scale=1"
+        >
+
+        <title>WP Imports Hub</title>
+
+        <style>
+
+            body {
+                font-family: Arial, sans-serif;
+                background: #f4f6f8;
+                margin: 0;
+                color: #1f2937;
+            }
+
+            .header {
+                background: #111827;
+                color: white;
+                padding: 22px 30px;
+            }
+
+            .header h1 {
+                margin: 0;
+                font-size: 25px;
+            }
+
+            .header p {
+                margin: 6px 0 0;
+                color: #cbd5e1;
+            }
+
+            .container {
+                max-width: 1450px;
+                margin: 25px auto;
+                padding: 0 20px;
+            }
+
+            .card {
+                background: white;
+                border-radius: 12px;
+                padding: 22px;
+                margin-bottom: 22px;
+                box-shadow:
+                    0 2px 10px rgba(0,0,0,.08);
+            }
+
+            .stats {
+                display: flex;
+                gap: 15px;
+                flex-wrap: wrap;
+            }
+
+            .stat {
+                background: #f8fafc;
+                border: 1px solid #e5e7eb;
+                border-radius: 10px;
+                padding: 14px 20px;
+            }
+
+            .stat strong {
+                display: block;
+                font-size: 24px;
+            }
+
+            .grid {
+                display: grid;
+                grid-template-columns:
+                    repeat(4, minmax(180px, 1fr));
+                gap: 15px;
+            }
+
+            label {
+                font-weight: bold;
+                display: block;
+                margin-bottom: 5px;
+            }
+
+            input,
+            select {
+                box-sizing: border-box;
+                width: 100%;
+                padding: 10px;
+                border: 1px solid #cbd5e1;
+                border-radius: 7px;
+            }
+
+            .search {
+                margin: 18px 0;
+                font-size: 16px;
+            }
+
+            table {
+                width: 100%;
+                border-collapse: collapse;
+            }
+
+            th,
+            td {
+                border-bottom: 1px solid #e5e7eb;
+                padding: 10px;
+                text-align: left;
+                vertical-align: middle;
+            }
+
+            th {
+                background: #f8fafc;
+                position: sticky;
+                top: 0;
+            }
+
+            .checkbox {
+                width: 22px;
+                height: 22px;
+            }
+
+            .table-wrap {
+                max-height: 570px;
+                overflow: auto;
+                border: 1px solid #e5e7eb;
+                border-radius: 8px;
+            }
+
+            .btn {
+                margin-top: 20px;
+                background: #111827;
+                color: white;
+                padding: 13px 22px;
+                border: 0;
+                border-radius: 8px;
+                font-size: 16px;
+                cursor: pointer;
+            }
+
+            .success {
+                background: #dcfce7;
+                color: #166534;
+                padding: 14px;
+                border-radius: 8px;
+                margin-bottom: 18px;
+            }
+
+            .error {
+                background: #fee2e2;
+                color: #991b1b;
+                padding: 14px;
+                border-radius: 8px;
+                margin-bottom: 18px;
+            }
+
+            .small {
+                font-size: 12px;
+                color: #64748b;
+            }
+
+            .active {
+                color: #15803d;
+                font-weight: bold;
+            }
+
+            .paused {
+                color: #b45309;
+                font-weight: bold;
+            }
+
+            @media (max-width: 900px) {
+
+                .grid {
+                    grid-template-columns: 1fr 1fr;
+                }
+
+            }
+
+        </style>
+
+    </head>
+
+    <body>
+
+        <div class="header">
+
+            <h1>WP IMPORTS HUB</h1>
+
+            <p>
+                Produtos centrais e anúncios
+                do Mercado Livre
+            </p>
+
+        </div>
+
+        <div class="container">
+
+            <div class="card">
+
+                <div class="stats">
+
+                    <div class="stat">
+                        <span>Produtos centrais</span>
+                        <strong>
+                            {{ products_count }}
+                        </strong>
+                    </div>
+
+                    <div class="stat">
+                        <span>Anúncios não vinculados</span>
+                        <strong>
+                            {{ listings|length }}
+                        </strong>
+                    </div>
+
+                </div>
+
+            </div>
+
+            {% if created %}
+
+                <div class="success">
+
+                    ✅ Produto criado com sucesso.
+
+                    ID interno:
+                    <strong>{{ created }}</strong>
+
+                    — anúncios vinculados:
+                    <strong>{{ linked }}</strong>
+
+                </div>
+
+            {% endif %}
+
+            {% if error %}
+
+                <div class="error">
+                    {{ error }}
+                </div>
+
+            {% endif %}
+
+            <form method="POST">
+
+                <div class="card">
+
+                    <h2>
+                        Criar produto central
+                    </h2>
+
+                    <p>
+                        Um produto central pode possuir vários
+                        anúncios no Mercado Livre.
+                    </p>
+
+                    <div class="grid">
+
+                        <div>
+
+                            <label>
+                                SKU interno *
+                            </label>
+
+                            <input
+                                name="internal_sku"
+                                placeholder="Ex: WP-IPH16P-256-PT"
+                                required
+                            >
+
+                        </div>
+
+                        <div>
+
+                            <label>
+                                Nome do produto *
+                            </label>
+
+                            <input
+                                name="name"
+                                placeholder=
+                                "iPhone 16 Pro 256GB Preto"
+                                required
+                            >
+
+                        </div>
+
+                        <div>
+
+                            <label>Marca</label>
+
+                            <input
+                                name="brand"
+                                placeholder="Apple"
+                            >
+
+                        </div>
+
+                        <div>
+
+                            <label>Modelo</label>
+
+                            <input
+                                name="model"
+                                placeholder="iPhone 16 Pro"
+                            >
+
+                        </div>
+
+                        <div>
+
+                            <label>Capacidade</label>
+
+                            <input
+                                name="storage"
+                                placeholder="256 GB"
+                            >
+
+                        </div>
+
+                        <div>
+
+                            <label>Cor</label>
+
+                            <input
+                                name="color"
+                                placeholder="Preto"
+                            >
+
+                        </div>
+
+                        <div>
+
+                            <label>Condição</label>
+
+                            <select name="product_condition">
+
+                                <option value="">
+                                    Selecione
+                                </option>
+
+                                <option value="NOVO">
+                                    Novo
+                                </option>
+
+                                <option value="SEMINOVO">
+                                    Seminovo
+                                </option>
+
+                            </select>
+
+                        </div>
+
+                    </div>
+
+                </div>
+
+                <div class="card">
+
+                    <h2>
+                        Vincular anúncios
+                    </h2>
+
+                    <p>
+                        Marque somente os anúncios que representam
+                        exatamente o mesmo produto físico.
+                    </p>
+
+                    <input
+                        class="search"
+                        type="text"
+                        id="searchInput"
+                        placeholder=
+                        "Pesquisar iPhone, memória, cor..."
+                        onkeyup="filterRows()"
+                    >
+
+                    <div class="table-wrap">
+
+                        <table id="listingsTable">
+
+                            <thead>
+
+                                <tr>
+
+                                    <th></th>
+                                    <th>Produto</th>
+                                    <th>Tipo</th>
+                                    <th>Preço</th>
+                                    <th>Estoque ML</th>
+                                    <th>Status</th>
+                                    <th>ID</th>
+
+                                </tr>
+
+                            </thead>
+
+                            <tbody>
+
+                                {% for item in listings %}
+
+                                <tr>
+
+                                    <td>
+
+                                        <input
+                                            class="checkbox"
+                                            type="checkbox"
+                                            name="listing_ids"
+                                            value=
+                                            "{{ item.listing_id }}"
+                                        >
+
+                                    </td>
+
+                                    <td>
+
+                                        <strong>
+                                            {{ item.title }}
+                                        </strong>
+
+                                        {% if item.sku %}
+
+                                            <div class="small">
+
+                                                SKU ML:
+                                                {{ item.sku }}
+
+                                            </div>
+
+                                        {% endif %}
+
+                                    </td>
+
+                                    <td>
+                                        {{ item.listing_type }}
+                                    </td>
+
+                                    <td>
+
+                                        {% if item.price is not none %}
+
+                                            R$
+                                            {{ "%.2f"|format(item.price) }}
+
+                                        {% endif %}
+
+                                    </td>
+
+                                    <td>
+                                        {{ item.stock }}
+                                    </td>
+
+                                    <td
+                                        class=
+                                        "{{ item.status }}"
+                                    >
+                                        {{ item.status }}
+                                    </td>
+
+                                    <td>
+
+                                        {% if item.permalink %}
+
+                                            <a
+                                                href=
+                                                "{{ item.permalink }}"
+                                                target="_blank"
+                                            >
+                                                {{ item.listing_id }}
+                                            </a>
+
+                                        {% else %}
+
+                                            {{ item.listing_id }}
+
+                                        {% endif %}
+
+                                    </td>
+
+                                </tr>
+
+                                {% endfor %}
+
+                            </tbody>
+
+                        </table>
+
+                    </div>
+
+                    <button
+                        class="btn"
+                        type="submit"
+                    >
+                        Criar produto e vincular anúncios
+                    </button>
+
+                </div>
+
+            </form>
+
+        </div>
+
+        <script>
+
+            function filterRows() {
+
+                const input =
+                    document
+                    .getElementById("searchInput")
+                    .value
+                    .toLowerCase();
+
+                const rows =
+                    document
+                    .querySelectorAll(
+                        "#listingsTable tbody tr"
+                    );
+
+                rows.forEach(row => {
+
+                    const text =
+                        row.innerText.toLowerCase();
+
+                    row.style.display =
+                        text.includes(input)
+                        ? ""
+                        : "none";
+
+                });
+
+            }
+
+        </script>
+
+    </body>
+
+    </html>
+    """
+
+    return render_template_string(
+        html,
+        listings=listings,
+        products_count=products_count,
+        error=error,
+        created=created,
+        linked=linked
+    )
 # ============================================================
 # NOTIFICAÇÕES MERCADO LIVRE
 # ============================================================
