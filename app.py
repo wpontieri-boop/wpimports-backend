@@ -617,7 +617,8 @@ def init_erp_tables():
                     model TEXT,
                     storage TEXT,
                     color TEXT,
-                    product_condition TEXT,
+                    condition_type TEXT NOT NULL,
+                    condition_grade TEXT,
                     active BOOLEAN NOT NULL DEFAULT TRUE,
                     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -647,7 +648,85 @@ def init_erp_tables():
                     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
                 )
             """)
+            cur.execute("""
+    ALTER TABLE products
+    ADD COLUMN IF NOT EXISTS condition_type TEXT
+""")
 
+cur.execute("""
+    ALTER TABLE products
+    ADD COLUMN IF NOT EXISTS condition_grade TEXT
+""")
+
+cur.execute("""
+    ALTER TABLE products
+    DROP COLUMN IF EXISTS product_condition
+""")
+
+cur.execute("""
+    ALTER TABLE products
+    DROP CONSTRAINT IF EXISTS products_condition_type_check
+""")
+
+cur.execute("""
+    ALTER TABLE products
+    ADD CONSTRAINT products_condition_type_check
+    CHECK (
+        condition_type IN (
+            'NOVO',
+            'CAIXA_ABERTA',
+            'RECONDICIONADO',
+            'SEMINOVO'
+        )
+    )
+""")
+
+cur.execute("""
+    ALTER TABLE products
+    DROP CONSTRAINT IF EXISTS products_condition_grade_check
+""")
+
+cur.execute("""
+    ALTER TABLE products
+    ADD CONSTRAINT products_condition_grade_check
+    CHECK (
+        condition_grade IS NULL
+        OR condition_grade IN (
+            'EXCELENTE',
+            'BOM',
+            'ACEITAVEL'
+        )
+    )
+""")
+cur.execute("""
+    ALTER TABLE products
+    ALTER COLUMN condition_type SET NOT NULL
+""")
+
+cur.execute("""
+    ALTER TABLE products
+    DROP CONSTRAINT IF EXISTS products_condition_rules_check
+""")
+
+cur.execute("""
+    ALTER TABLE products
+    ADD CONSTRAINT products_condition_rules_check
+    CHECK (
+        (
+            condition_type IN ('NOVO', 'CAIXA_ABERTA')
+            AND condition_grade IS NULL
+        )
+        OR
+        (
+            condition_type IN ('RECONDICIONADO', 'SEMINOVO')
+            AND condition_grade IN (
+                'EXCELENTE',
+                'BOM',
+                'ACEITAVEL'
+            )
+        )
+    )
+""")
             # Anúncios dos marketplaces
             cur.execute("""
                 CREATE TABLE IF NOT EXISTS marketplace_listings (
