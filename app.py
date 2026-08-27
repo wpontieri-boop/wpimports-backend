@@ -684,6 +684,81 @@ def import_ml_listings():
             "error": "ml_listings_import_failed",
             "detail": str(e)
         }), 500
+
+
+# ============================================================
+# ERP - ANÚNCIOS AINDA NÃO VINCULADOS A PRODUTOS
+# ============================================================
+
+@app.route("/erp/unlinked-listings")
+def erp_unlinked_listings():
+
+    try:
+
+        init_erp_tables()
+        init_ml_items_table()
+
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+
+                cur.execute("""
+                    SELECT
+                        ml.external_listing_id,
+                        mi.title,
+                        mi.price,
+                        mi.stock,
+                        mi.status,
+                        mi.sku,
+                        mi.listing_type,
+                        mi.permalink
+                    FROM marketplace_listings ml
+
+                    LEFT JOIN ml_items mi
+                        ON mi.item_id = ml.external_listing_id
+
+                    WHERE
+                        ml.marketplace = 'mercado_livre'
+                        AND ml.product_id IS NULL
+
+                    ORDER BY
+                        mi.title ASC,
+                        ml.external_listing_id ASC
+                """)
+
+                rows = cur.fetchall()
+
+        listings = []
+
+        for row in rows:
+
+            listings.append({
+                "listing_id": row[0],
+                "title": row[1],
+                "price":
+                    float(row[2])
+                    if row[2] is not None
+                    else None,
+                "stock": row[3],
+                "status": row[4],
+                "sku": row[5],
+                "listing_type": row[6],
+                "permalink": row[7]
+            })
+
+        return jsonify({
+            "success": True,
+            "marketplace": "mercado_livre",
+            "unlinked_count": len(listings),
+            "listings": listings
+        })
+
+    except Exception as e:
+
+        return jsonify({
+            "success": False,
+            "error": "unlinked_listings_failed",
+            "detail": str(e)
+        }), 500
 # ============================================================
 # NOTIFICAÇÕES MERCADO LIVRE
 # ============================================================
