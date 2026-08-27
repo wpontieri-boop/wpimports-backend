@@ -666,7 +666,30 @@ def init_erp_tables():
                     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
                 )
+                """)
+             cur.execute("""
+                CREATE UNIQUE INDEX IF NOT EXISTS
+                product_units_imei1_unique
+                ON product_units (imei_1)
+                WHERE imei_1 IS NOT NULL
+                  AND imei_1 <> ''
             """)
+    
+            cur.execute("""
+                CREATE UNIQUE INDEX IF NOT EXISTS
+                product_units_imei2_unique
+                ON product_units (imei_2)
+                WHERE imei_2 IS NOT NULL
+                  AND imei_2 <> ''
+            """)
+    
+            cur.execute("""
+                CREATE UNIQUE INDEX IF NOT EXISTS
+                product_units_serial_unique
+                ON product_units (serial_number)
+                WHERE serial_number IS NOT NULL
+                  AND serial_number <> ''
+            """)           
             cur.execute("""
                 ALTER TABLE products
                 ADD COLUMN IF NOT EXISTS condition_type TEXT
