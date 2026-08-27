@@ -993,9 +993,16 @@ def admin_products():
             request.form.get("color") or ""
         ).strip() or None
 
-        product_condition = (
-            request.form.get("product_condition") or ""
-        ).strip() or None
+    condition_type = (
+    request.form.get("condition_type") or ""
+).strip().upper()
+
+    condition_grade = (
+    request.form.get("condition_grade") or ""
+).strip().upper() or None
+
+    if condition_type in ("NOVO", "CAIXA_ABERTA"):
+    condition_grade = None
 
         listing_ids = request.form.getlist(
             "listing_ids"
@@ -1006,7 +1013,28 @@ def admin_products():
 
         elif not name:
             error = "Informe o nome do produto."
+       
+        elif condition_type not in (
+            "NOVO",
+            "CAIXA_ABERTA",
+            "RECONDICIONADO",
+            "SEMINOVO"
+        ):
+            error = "Selecione uma condição válida."
 
+        elif (
+            condition_type in ("RECONDICIONADO", "SEMINOVO")
+            and condition_grade not in (
+                "EXCELENTE",
+                "BOM",
+                "ACEITAVEL"
+            )
+        ):
+            error = (
+                "Para recondicionado ou seminovo, "
+                "selecione Excelente, Bom ou Aceitável."
+            )
+            
         elif not listing_ids:
             error = (
                 "Selecione pelo menos um anúncio "
@@ -1028,12 +1056,13 @@ def admin_products():
                                 model,
                                 storage,
                                 color,
-                                product_condition,
+                                condition_type,
+                                condition_grade,
                                 updated_at
                             )
                             VALUES (
                                 %s, %s, %s, %s,
-                                %s, %s, %s, NOW()
+                                %s, %s, %s, %s, NOW()
                             )
                             RETURNING id
                         """, (
@@ -1043,7 +1072,8 @@ def admin_products():
                             model,
                             storage,
                             color,
-                            product_condition
+                            condition_type,
+                            condition_grade
                         ))
 
                         product_id = cur.fetchone()[0]
@@ -1481,21 +1511,24 @@ def admin_products():
 
                             <label>Condição</label>
 
-                            <select name="product_condition">
-
-                                <option value="">
-                                    Selecione
-                                </option>
-
-                                <option value="NOVO">
-                                    Novo
-                                </option>
-
-                                <option value="SEMINOVO">
-                                    Seminovo
-                                </option>
-
+                            <select name="condition_type" id="condition_type" required>
+                                <option value="">Selecione</option>
+                                <option value="NOVO">Novo</option>
+                                <option value="CAIXA_ABERTA">Caixa aberta</option>
+                                <option value="RECONDICIONADO">Recondicionado</option>
+                                <option value="SEMINOVO">Seminovo</option>
                             </select>
+
+                            <div id="condition_grade_box" style="display:none; margin-top:12px;">
+                                <label>Classificação</label>
+
+                                <select name="condition_grade" id="condition_grade">
+                                     <option value="">Selecione</option>
+                                    <option value="EXCELENTE">Excelente</option>
+                                    <option value="BOM">Bom</option>
+                                    <option value="ACEITAVEL">Aceitável</option>
+                                </select>
+                            </div>
 
                         </div>
 
@@ -1680,6 +1713,29 @@ def admin_products():
             }
 
         </script>
+<script>
+    const conditionType = document.getElementById("condition_type");
+    const gradeBox = document.getElementById("condition_grade_box");
+    const conditionGrade = document.getElementById("condition_grade");
+
+    function updateConditionGrade() {
+        const needsGrade =
+            conditionType.value === "RECONDICIONADO" ||
+            conditionType.value === "SEMINOVO";
+
+        if (needsGrade) {
+            gradeBox.style.display = "block";
+            conditionGrade.required = true;
+        } else {
+            gradeBox.style.display = "none";
+            conditionGrade.required = false;
+            conditionGrade.value = "";
+        }
+    }
+
+    conditionType.addEventListener("change", updateConditionGrade);
+    updateConditionGrade();
+</script>
 
     </body>
 
