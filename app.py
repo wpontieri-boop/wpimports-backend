@@ -999,22 +999,22 @@ def admin_products():
 
     condition_grade = (
         request.form.get("condition_grade") or ""
-).strip().upper() or None
+    ).strip().upper() or None
 
-     if condition_type in ("NOVO", "CAIXA_ABERTA"):
+    if condition_type in ("NOVO", "CAIXA_ABERTA"):
         condition_grade = None
 
     listing_ids = request.form.getlist(
             "listing_ids"
-        )
+    )
 
-        if not internal_sku:
+    if not internal_sku:
             error = "Informe o SKU interno."
 
-        elif not name:
+    elif not name:
             error = "Informe o nome do produto."
        
-        elif condition_type not in (
+    elif condition_type not in (
             "NOVO",
             "CAIXA_ABERTA",
             "RECONDICIONADO",
@@ -1022,7 +1022,7 @@ def admin_products():
         ):
             error = "Selecione uma condição válida."
 
-        elif (
+    elif (
             condition_type in ("RECONDICIONADO", "SEMINOVO")
             and condition_grade not in (
                 "EXCELENTE",
@@ -1035,7 +1035,7 @@ def admin_products():
                 "selecione Excelente, Bom ou Aceitável."
             )
             
-        elif not listing_ids:
+    elif not listing_ids:
             error = (
                 "Selecione pelo menos um anúncio "
                 "do Mercado Livre."
