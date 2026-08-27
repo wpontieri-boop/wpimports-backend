@@ -993,63 +993,79 @@ def admin_products():
             request.form.get("color") or ""
         ).strip() or None
 
-    condition_type = (
-    request.form.get("condition_type") or ""
-).strip().upper()
-
-    condition_grade = (
-        request.form.get("condition_grade") or ""
-    ).strip().upper() or None
-
-    if condition_type in ("NOVO", "CAIXA_ABERTA"):
-        condition_grade = None
-
-    listing_ids = request.form.getlist(
-            "listing_ids"
-    )
-
-    if not internal_sku:
-            error = "Informe o SKU interno."
-
-    elif not name:
-            error = "Informe o nome do produto."
-       
-    elif condition_type not in (
-            "NOVO",
-            "CAIXA_ABERTA",
-            "RECONDICIONADO",
-            "SEMINOVO"
-        ):
-            error = "Selecione uma condição válida."
-
-    elif (
-            condition_type in ("RECONDICIONADO", "SEMINOVO")
-            and condition_grade not in (
-                "EXCELENTE",
-                "BOM",
-                "ACEITAVEL"
-            )
-        ):
-            error = (
-                "Para recondicionado ou seminovo, "
-                "selecione Excelente, Bom ou Aceitável."
-            )
-            
-    elif not listing_ids:
-            error = (
-                "Selecione pelo menos um anúncio "
-                "do Mercado Livre."
-            )
-
-    else:
-
-            try:
-
-                with get_db_connection() as conn:
-                    with conn.cursor() as cur:
-
-                        cur.execute("""
-                            INSERT INTO products (
+        condition_type = (
+        request.form.get("condition_type") or ""
+    ).strip().upper()
+    
+        condition_grade = (
+            request.form.get("condition_grade") or ""
+        ).strip().upper() or None
+    
+        if condition_type in ("NOVO", "CAIXA_ABERTA"):
+            condition_grade = None
+    
+        listing_ids = request.form.getlist(
+                "listing_ids"
+        )
+    
+        if not internal_sku:
+                error = "Informe o SKU interno."
+    
+        elif not name:
+                error = "Informe o nome do produto."
+           
+        elif condition_type not in (
+                "NOVO",
+                "CAIXA_ABERTA",
+                "RECONDICIONADO",
+                "SEMINOVO"
+            ):
+                error = "Selecione uma condição válida."
+    
+        elif (
+                condition_type in ("RECONDICIONADO", "SEMINOVO")
+                and condition_grade not in (
+                    "EXCELENTE",
+                    "BOM",
+                    "ACEITAVEL"
+                )
+            ):
+                error = (
+                    "Para recondicionado ou seminovo, "
+                    "selecione Excelente, Bom ou Aceitável."
+                )
+                
+        elif not listing_ids:
+                error = (
+                    "Selecione pelo menos um anúncio "
+                    "do Mercado Livre."
+                )
+    
+        else:
+    
+                try:
+    
+                    with get_db_connection() as conn:
+                        with conn.cursor() as cur:
+    
+                            cur.execute("""
+                                INSERT INTO products (
+                                    internal_sku,
+                                    name,
+                                    brand,
+                                    model,
+                                    storage,
+                                    color,
+                                    condition_type,
+                                    condition_grade,
+                                    updated_at
+                                )
+                                VALUES (
+                                    %s, %s, %s, %s,
+                                    %s, %s, %s, %s, NOW()
+                                )
+                                RETURNING id
+                            """, (
                                 internal_sku,
                                 name,
                                 brand,
@@ -1057,61 +1073,45 @@ def admin_products():
                                 storage,
                                 color,
                                 condition_type,
-                                condition_grade,
-                                updated_at
-                            )
-                            VALUES (
-                                %s, %s, %s, %s,
-                                %s, %s, %s, %s, NOW()
-                            )
-                            RETURNING id
-                        """, (
-                            internal_sku,
-                            name,
-                            brand,
-                            model,
-                            storage,
-                            color,
-                            condition_type,
-                            condition_grade
-                        ))
-
-                        product_id = cur.fetchone()[0]
-
-                        cur.execute("""
-                            UPDATE marketplace_listings
-
-                            SET
-                                product_id = %s,
-                                updated_at = NOW()
-
-                            WHERE
-                                marketplace = 'mercado_livre'
-                                AND product_id IS NULL
-                                AND external_listing_id = ANY(%s)
-                        """, (
-                            product_id,
-                            listing_ids
-                        ))
-
-                        linked_count = cur.rowcount
-
-                return redirect(
-                    "/admin/products"
-                    f"?created={product_id}"
-                    f"&linked={linked_count}"
-                )
-
-            except psycopg.errors.UniqueViolation:
-
-                error = (
-                    "Esse SKU interno já existe. "
-                    "Escolha outro SKU."
-                )
-
-            except Exception as e:
-
-                error = f"Erro ao criar produto: {str(e)}"
+                                condition_grade
+                            ))
+    
+                            product_id = cur.fetchone()[0]
+    
+                            cur.execute("""
+                                UPDATE marketplace_listings
+    
+                                SET
+                                    product_id = %s,
+                                    updated_at = NOW()
+    
+                                WHERE
+                                    marketplace = 'mercado_livre'
+                                    AND product_id IS NULL
+                                    AND external_listing_id = ANY(%s)
+                            """, (
+                                product_id,
+                                listing_ids
+                            ))
+    
+                            linked_count = cur.rowcount
+    
+                    return redirect(
+                        "/admin/products"
+                        f"?created={product_id}"
+                        f"&linked={linked_count}"
+                    )
+    
+                except psycopg.errors.UniqueViolation:
+    
+                    error = (
+                        "Esse SKU interno já existe. "
+                        "Escolha outro SKU."
+                    )
+    
+                except Exception as e:
+    
+                    error = f"Erro ao criar produto: {str(e)}"
 
     created = request.args.get("created")
     linked = request.args.get("linked")
