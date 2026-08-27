@@ -998,13 +998,13 @@ def admin_products():
 ).strip().upper()
 
     condition_grade = (
-    request.form.get("condition_grade") or ""
+        request.form.get("condition_grade") or ""
 ).strip().upper() or None
 
-    if condition_type in ("NOVO", "CAIXA_ABERTA"):
-    condition_grade = None
+     if condition_type in ("NOVO", "CAIXA_ABERTA"):
+        condition_grade = None
 
-        listing_ids = request.form.getlist(
+    listing_ids = request.form.getlist(
             "listing_ids"
         )
 
