@@ -307,7 +307,7 @@ def protect_admin_routes():
     )
 
     if not is_protected_path and not is_protected_prefix:
-    return None
+        return None
     admin_api_key = os.getenv("ADMIN_API_KEY")
 
     if not admin_api_key:
