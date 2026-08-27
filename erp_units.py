@@ -1,4 +1,4 @@
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, jsonify, request, render_template_string
 from decimal import Decimal, InvalidOperation
 import secrets
 
@@ -293,6 +293,289 @@ def create_units_blueprint(get_db_connection):
                 "status": row[15]
             }
         })
+    # ==========================================================
+    # PWA - ENTRADA DE APARELHO
+    # ==========================================================
 
+    @bp.route("/erp/units/entry")
+    def unit_entry_page():
+
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+
+                cur.execute("""
+                    SELECT
+                        id,
+                        internal_sku,
+                        name,
+                        condition_type,
+                        condition_grade
+                    FROM products
+                    WHERE active = TRUE
+                    ORDER BY name
+                """)
+
+                products = cur.fetchall()
+
+        html = """
+        <!DOCTYPE html>
+        <html lang="pt-BR">
+
+        <head>
+            <meta charset="UTF-8">
+            <meta
+                name="viewport"
+                content="width=device-width, initial-scale=1.0"
+            >
+
+            <title>WP Imports - Entrada</title>
+
+            <style>
+                body {
+                    font-family: Arial, sans-serif;
+                    background: #f5f5f5;
+                    margin: 0;
+                    padding: 20px;
+                }
+
+                .container {
+                    max-width: 600px;
+                    margin: auto;
+                    background: white;
+                    padding: 24px;
+                    border-radius: 18px;
+                    box-shadow: 0 4px 20px rgba(0,0,0,.10);
+                }
+
+                h1 {
+                    margin-top: 0;
+                }
+
+                label {
+                    display: block;
+                    font-weight: bold;
+                    margin-top: 16px;
+                    margin-bottom: 6px;
+                }
+
+                input,
+                select {
+                    width: 100%;
+                    box-sizing: border-box;
+                    padding: 14px;
+                    font-size: 16px;
+                    border: 1px solid #ccc;
+                    border-radius: 10px;
+                }
+
+                button {
+                    width: 100%;
+                    margin-top: 22px;
+                    padding: 16px;
+                    border: 0;
+                    border-radius: 12px;
+                    font-size: 17px;
+                    font-weight: bold;
+                    cursor: pointer;
+                }
+
+                .photo {
+                    background: #222;
+                    color: white;
+                }
+
+                .save {
+                    background: #111;
+                    color: white;
+                }
+
+                .hint {
+                    color: #666;
+                    font-size: 14px;
+                    margin-top: 6px;
+                }
+            </style>
+        </head>
+
+        <body>
+
+            <div class="container">
+
+                <h1>Entrada de aparelho</h1>
+
+                <p>
+                    WP Imports Hub
+                </p>
+
+                <label>Foto do aparelho / etiqueta</label>
+
+                <input
+                    type="file"
+                    id="device_photo"
+                    accept="image/*"
+                    capture="environment"
+                >
+
+                <div class="hint">
+                    A leitura automática por IA será conectada
+                    no próximo passo.
+                </div>
+
+                <label>Produto central</label>
+
+                <select id="product_id">
+
+                    <option value="">
+                        Selecione o produto
+                    </option>
+
+                    {% for product in products %}
+
+                        <option value="{{ product[0] }}">
+                            {{ product[2] }}
+                            -
+                            {{ product[1] }}
+
+                            {% if product[3] %}
+                                - {{ product[3] }}
+                            {% endif %}
+
+                            {% if product[4] %}
+                                / {{ product[4] }}
+                            {% endif %}
+                        </option>
+
+                    {% endfor %}
+
+                </select>
+
+                <label>IMEI 1</label>
+                <input id="imei_1" inputmode="numeric">
+
+                <label>IMEI 2</label>
+                <input id="imei_2" inputmode="numeric">
+
+                <label>Número de série</label>
+                <input id="serial_number">
+
+                <label>Saúde da bateria (%)</label>
+                <input
+                    id="battery_health"
+                    type="number"
+                    min="0"
+                    max="100"
+                >
+
+                <label>Custo</label>
+                <input
+                    id="cost"
+                    type="number"
+                    step="0.01"
+                >
+
+                <button
+                    class="save"
+                    onclick="saveUnit()"
+                >
+                    Criar unidade e QR Code
+                </button>
+
+                <div
+                    id="result"
+                    style="margin-top:20px;"
+                ></div>
+
+            </div>
+
+
+            <script>
+
+                async function saveUnit() {
+
+                    const payload = {
+                        product_id:
+                            document.getElementById(
+                                "product_id"
+                            ).value,
+
+                        imei_1:
+                            document.getElementById(
+                                "imei_1"
+                            ).value,
+
+                        imei_2:
+                            document.getElementById(
+                                "imei_2"
+                            ).value,
+
+                        serial_number:
+                            document.getElementById(
+                                "serial_number"
+                            ).value,
+
+                        battery_health:
+                            document.getElementById(
+                                "battery_health"
+                            ).value,
+
+                        cost:
+                            document.getElementById(
+                                "cost"
+                            ).value
+                    };
+
+
+                    const response = await fetch(
+                        "/erp/units/create",
+                        {
+                            method: "POST",
+
+                            headers: {
+                                "Content-Type":
+                                    "application/json"
+                            },
+
+                            body: JSON.stringify(payload)
+                        }
+                    );
+
+
+                    const data = await response.json();
+
+                    const result =
+                        document.getElementById(
+                            "result"
+                        );
+
+
+                    if (data.success) {
+
+                        result.innerHTML =
+                            "<b>Unidade criada:</b> "
+                            + data.unit_code
+                            + "<br><b>Status:</b> "
+                            + data.status;
+
+                    } else {
+
+                        result.innerHTML =
+                            "<b>Erro:</b> "
+                            + (
+                                data.error ||
+                                "Não foi possível criar."
+                            );
+                    }
+                }
+
+            </script>
+
+        </body>
+        </html>
+        """
+
+        return render_template_string(
+            html,
+            products=products
+        )
 
     return bp
