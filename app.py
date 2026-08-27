@@ -7,6 +7,7 @@ import hmac
 from functools import wraps
 from urllib.parse import urlencode
 from datetime import datetime, timezone, timedelta
+from erp_units import create_units_blueprint
 
 
 app = Flask(__name__)
@@ -80,7 +81,9 @@ def get_db_connection():
         raise RuntimeError("DATABASE_URL não configurada.")
 
     return psycopg.connect(DATABASE_URL)
-
+    
+erp_units_bp = create_units_blueprint(get_db_connection)
+app.register_blueprint(erp_units_bp)
 
 def init_db():
     with get_db_connection() as conn:
@@ -287,14 +290,24 @@ ADMIN_PROTECTED_PATHS = {
     "/erp/unlinked-listings",
 }
 
+ADMIN_PROTECTED_PREFIXES = (
+    "/erp/units/",
+)
 
 @app.before_request
 def protect_admin_routes():
 
     # Rotas públicas continuam funcionando normalmente
-    if request.path not in ADMIN_PROTECTED_PATHS:
-        return None
 
+    is_protected_path = request.path in ADMIN_PROTECTED_PATHS
+
+    is_protected_prefix = any(
+    request.path.startswith(prefix)
+    for prefix in ADMIN_PROTECTED_PREFIXES
+    )
+
+    if not is_protected_path and not is_protected_prefix:
+    return None
     admin_api_key = os.getenv("ADMIN_API_KEY")
 
     if not admin_api_key:
