@@ -308,24 +308,30 @@ def protect_admin_routes():
 
     if not is_protected_path and not is_protected_prefix:
         return None
-    admin_api_key = os.getenv("ADMIN_API_KEY")
 
-    if not admin_api_key:
+    
+    admin_user = os.getenv("ADMIN_USER")
+    admin_password = os.getenv("ADMIN_PASSWORD")
+
+    if not admin_user or not admin_password:
         return jsonify({
             "success": False,
-            "error": "admin_key_not_configured"
+            "error": "admin_credentials_not_configured"
         }), 503
 
     auth = request.authorization
 
     valid_login = (
         auth
-        and auth.username == "admin"
+        and hmac.compare_digest(
+            auth.username or "",
+            admin_user
+    )
         and hmac.compare_digest(
             auth.password or "",
-            admin_api_key
-        )
+            admin_password
     )
+)
 
     if not valid_login:
 
