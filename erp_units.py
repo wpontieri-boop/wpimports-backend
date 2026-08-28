@@ -180,7 +180,7 @@ Retorne SOMENTE JSON neste formato:
             client = genai.Client(
                 api_key=api_key,
                 http_options=types.HttpOptions(
-                    timeout=12000,
+                    timeout=25000,
                     retry_options=types.HttpRetryOptions(
                         attempts=1
                     )
@@ -219,12 +219,15 @@ Retorne SOMENTE JSON neste formato:
                     last_error = model_exc
                     error_text = str(model_exc).upper()
 
-                    temporary_error = (
-                        "503" in error_text
-                        or "UNAVAILABLE" in error_text
-                        or "429" in error_text
-                        or "RESOURCE_EXHAUSTED" in error_text
-                    )
+                temporary_error = (
+                    "503" in error_text
+                    or "UNAVAILABLE" in error_text
+                    or "429" in error_text
+                    or "RESOURCE_EXHAUSTED" in error_text
+                    or "TIMEOUT" in error_text
+                    or "TIMED OUT" in error_text
+                    or "READ OPERATION" in error_text
+                )
 
                     if not temporary_error:
                         raise
