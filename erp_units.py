@@ -1260,6 +1260,109 @@ function autoSelectProductFromText(text) {
     return "";
 }
 
+function compressImageForGemini(
+    file,
+    maxSize = 1600,
+    quality = 0.82
+) {
+
+    return new Promise((resolve, reject) => {
+
+        const image = new Image();
+        const objectUrl =
+            URL.createObjectURL(file);
+
+        image.onload = function () {
+
+            try {
+
+                let width = image.width;
+                let height = image.height;
+
+                if (
+                    width > maxSize ||
+                    height > maxSize
+                ) {
+
+                    const scale =
+                        Math.min(
+                            maxSize / width,
+                            maxSize / height
+                        );
+
+                    width =
+                        Math.round(width * scale);
+
+                    height =
+                        Math.round(height * scale);
+                }
+
+                const canvas =
+                    document.createElement("canvas");
+
+                canvas.width = width;
+                canvas.height = height;
+
+                const ctx =
+                    canvas.getContext("2d");
+
+                ctx.drawImage(
+                    image,
+                    0,
+                    0,
+                    width,
+                    height
+                );
+
+                canvas.toBlob(
+                    function (blob) {
+
+                        URL.revokeObjectURL(
+                            objectUrl
+                        );
+
+                        if (!blob) {
+                            reject(
+                                new Error(
+                                    "Não foi possível reduzir a foto."
+                                )
+                            );
+                            return;
+                        }
+
+                        resolve(blob);
+                    },
+                    "image/jpeg",
+                    quality
+                );
+
+            } catch (error) {
+
+                URL.revokeObjectURL(
+                    objectUrl
+                );
+
+                reject(error);
+            }
+        };
+
+        image.onerror = function () {
+
+            URL.revokeObjectURL(
+                objectUrl
+            );
+
+            reject(
+                new Error(
+                    "Não foi possível abrir a foto."
+                )
+            );
+        };
+
+        image.src = objectUrl;
+    });
+}
+
 async function analyzePhotosWithGemini() {
 
     const result =
@@ -1276,7 +1379,11 @@ async function analyzePhotosWithGemini() {
         modelSerialPhoto.files[0];
 
 
-    if (!photo1 && !photo2) {
+    if (!photo1 || !photo2) {
+    
+        result.innerHTML =
+            "<b>📷 Aguardando Foto 1 e Foto 2...</b>";
+    
         return;
     }
 
@@ -1288,24 +1395,30 @@ async function analyzePhotosWithGemini() {
 
     try {
 
-        const formData =
-            new FormData();
-
-
-        if (photo1) {
-            formData.append(
-                "photo1",
+        const compressedPhoto1 =
+            await compressImageForGemini(
                 photo1
             );
-        }
-
-
-        if (photo2) {
-            formData.append(
-                "photo2",
+        
+        const compressedPhoto2 =
+            await compressImageForGemini(
                 photo2
             );
-        }
+        
+        const formData =
+            new FormData();
+        
+        formData.append(
+            "photo1",
+            compressedPhoto1,
+            "photo1.jpg"
+        );
+        
+        formData.append(
+            "photo2",
+            compressedPhoto2,
+            "photo2.jpg"
+        );
 
 
         /*
