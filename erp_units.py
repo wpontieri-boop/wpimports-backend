@@ -45,7 +45,179 @@ def create_units_blueprint(get_db_connection):
                 "success": False,
                 "error": str(exc)
             }), 500
+    @bp.route("/erp/units/gemini-read", methods=["POST"])
+    def gemini_read():
 
+        try:
+
+            api_key = os.getenv("GEMINI_API_KEY")
+
+            if not api_key:
+                return jsonify({
+                    "success": False,
+                    "error": "GEMINI_API_KEY não configurada"
+                }), 500
+
+
+            photo1 = request.files.get("photo1")
+            photo2 = request.files.get("photo2")
+
+            if not photo1 and not photo2:
+                return jsonify({
+                    "success": False,
+                    "error": "Envie pelo menos uma foto."
+                }), 400
+
+
+            category = (
+                request.form.get("category")
+                or "IPHONE"
+            ).strip().upper()
+
+
+            prompt = f"""
+Você é o leitor visual do sistema WP Imports Hub.
+
+Categoria informada:
+{category}
+
+Analise cuidadosamente TODAS as imagens enviadas.
+
+REGRAS IMPORTANTES:
+
+1. NÃO invente informações.
+2. NÃO complete números que não estejam visíveis.
+3. Se um dado não puder ser confirmado, use null.
+4. Diferencie IMEI 1 de IMEI 2 pelo rótulo visual.
+5. Nunca use o número 1 do texto "IMEI 1"
+   como parte do próprio IMEI.
+6. Nunca troque IMEI 1 por IMEI 2.
+7. Um IMEI deve possuir exatamente 15 dígitos.
+8. Preserve exatamente o número de série mostrado.
+9. Se houver reflexo, mas o texto ainda estiver legível,
+   faça a leitura normalmente.
+10. Se o reflexo esconder caracteres,
+    não tente adivinhar.
+
+Para IPHONE ou SMARTPHONE procure:
+- marca
+- modelo
+- armazenamento
+- cor
+- IMEI 1
+- IMEI 2
+- número de série
+- saúde da bateria
+
+Para PLAYSTATION procure:
+- modelo
+- versão
+- armazenamento
+- número de série
+Não procure IMEI.
+
+Para MACBOOK procure:
+- modelo
+- chip/processador
+- memória RAM
+- armazenamento
+- cor
+- número de série
+
+Para IPAD procure:
+- modelo
+- armazenamento
+- cor
+- número de série
+
+Retorne SOMENTE JSON neste formato:
+
+{{
+  "category": "{category}",
+  "brand": null,
+  "model": null,
+  "storage": null,
+  "color": null,
+  "imei_1": null,
+  "imei_2": null,
+  "serial_number": null,
+  "battery_health": null,
+  "processor": null,
+  "ram": null,
+  "version": null,
+  "needs_new_photo": false,
+  "warning": null
+}}
+"""
+
+
+            contents = [prompt]
+
+
+            for photo in (photo1, photo2):
+
+                if not photo:
+                    continue
+
+                image_bytes = photo.read()
+
+                if not image_bytes:
+                    continue
+
+                mime_type = (
+                    photo.mimetype
+                    or "image/jpeg"
+                )
+
+                contents.append(
+                    types.Part.from_bytes(
+                        data=image_bytes,
+                        mime_type=mime_type
+                    )
+                )
+
+
+            client = genai.Client(
+                api_key=api_key
+            )
+
+
+            response = client.models.generate_content(
+                model="gemini-3.7-flash",
+                contents=contents,
+                config=types.GenerateContentConfig(
+                    response_mime_type="application/json",
+                    temperature=0
+                )
+            )
+
+
+            result = json.loads(
+                response.text
+            )
+
+
+            return jsonify({
+                "success": True,
+                "model": "gemini-3.7-flash",
+                "data": result
+            })
+
+
+        except json.JSONDecodeError:
+
+            return jsonify({
+                "success": False,
+                "error": "O Gemini não retornou JSON válido."
+            }), 500
+
+
+        except Exception as exc:
+
+            return jsonify({
+                "success": False,
+                "error": str(exc)
+            }), 500
     # ==========================================================
     # STATUS DAS UNIDADES FÍSICAS
     # ==========================================================
