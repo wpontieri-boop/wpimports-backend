@@ -187,20 +187,19 @@ Retorne SOMENTE JSON neste formato:
                 )
             )
 
-
             models_to_try = [
                 "gemini-3.6-flash",
                 "gemini-3.7-flash"
             ]
-
+            
             response = None
             used_model = None
             last_error = None
-
+            
             for model_name in models_to_try:
-
+            
                 try:
-
+            
                     response = client.models.generate_content(
                         model=model_name,
                         contents=contents,
@@ -210,10 +209,11 @@ Retorne SOMENTE JSON neste formato:
                                 thinking_level="low"
                             )
                         )
-
+                    )
+            
                     used_model = model_name
                     break
-
+                    
                 except Exception as model_exc:
 
                     last_error = model_exc
