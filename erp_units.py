@@ -1121,167 +1121,6 @@ function findImeis(text) {
                 model: detectedModel
             };
         }
-
-        devicePhoto.addEventListener(
-            "change",
-            async function () {
-
-                const file = devicePhoto.files[0];
-
-                if (!file) {
-                    return;
-                }
-
-                const result =
-                    document.getElementById("result");
-
-                result.innerHTML =
-                    "<b>📷 Lendo foto...</b><br>" +
-                    "Aguarde alguns segundos.";
-
-                try {
-
-                    const ocrResult =
-                        await Tesseract.recognize(
-                            file,
-                            "eng",
-                            {
-                                logger: function (m) {
-
-                                    if (
-                                        m.status ===
-                                        "recognizing text"
-                                    ) {
-
-                                        const percent =
-                                            Math.round(
-                                                m.progress * 100
-                                            );
-
-                                        result.innerHTML =
-                                            "<b>📷 Lendo foto...</b><br>" +
-                                            percent + "%";
-                                    }
-                                }
-                            }
-                        );
-
-                    const text =
-                        ocrResult.data.text || "";
-                    const storage =
-                        findStorage(text);
-
-                    const productMatch =
-                        findProductFromPhoto(
-                            text,
-                            storage
-                        );                        
-
-                    console.log(
-                        "OCR WP Imports:",
-                        text
-                    );
-
-                    const imeis =
-                        findImeis(text);
-
-                    const serial =
-                        findSerialNumber(text);
-
-                    const battery =
-                        findBatteryHealth(text);
-
-                    if (imeis[0]) {
-                        document
-                            .getElementById("imei_1")
-                            .value = imeis[0];
-                    }
-
-                    if (imeis[1]) {
-                        document
-                            .getElementById("imei_2")
-                            .value = imeis[1];
-                    }
-
-                    if (serial) {
-                        document
-                            .getElementById(
-                                "serial_number"
-                            )
-                            .value = serial;
-                    }
-
-                    if (battery) {
-                        document
-                            .getElementById(
-                                "battery_health"
-                            )
-                            .value = battery;
-                    }
-
-                    let found = [];
-                    if (productMatch.model) {
-                        found.push(
-                            "modelo " +
-                            productMatch.model
-                        );
-                    }
-
-                    if (storage) {
-                        found.push(
-                            storage
-                        );
-                    }                    
-
-                    if (imeis.length) {
-                        found.push(
-                            imeis.length +
-                            " IMEI(s)"
-                        );
-                    }
-
-                    if (serial) {
-                        found.push("serial");
-                    }
-
-                    if (battery) {
-                        found.push(
-                            "bateria " +
-                            battery +
-                            "%"
-                        );
-                    }
-
-                    if (found.length) {
-
-                        result.innerHTML =
-                            "<b>✅ Foto analisada.</b><br>" +
-                            "Encontrado: " +
-                            found.join(", ") +
-                            ".<br>" +
-                            "Confira os dados antes de salvar.";
-
-                    } else {
-
-                        result.innerHTML =
-                            "<b>⚠️ Foto lida, mas não consegui identificar os dados.</b><br>" +
-                            "Tente outra foto mais próxima e sem reflexo.";
-                    }
-
-                } catch (error) {
-
-                    console.error(
-                        "Erro OCR:",
-                        error
-                    );
-
-                    result.innerHTML =
-                        "<b>Erro ao ler a foto.</b><br>" +
-                        "Tente novamente.";
-                }
-            }
-        ); 
-
         
 const modelSerialPhoto =
     document.getElementById("model_serial_photo");
@@ -1380,120 +1219,368 @@ function autoSelectProductFromText(text) {
     return "";
 }
 
+async function analyzePhotosWithGemini() {
+
+    const result =
+        document.getElementById("result");
+
+    const photo1 =
+        devicePhoto &&
+        devicePhoto.files &&
+        devicePhoto.files[0];
+
+    const photo2 =
+        modelSerialPhoto &&
+        modelSerialPhoto.files &&
+        modelSerialPhoto.files[0];
+
+
+    if (!photo1 && !photo2) {
+        return;
+    }
+
+
+    result.innerHTML =
+        "<b>🤖 Analisando com Gemini...</b><br>" +
+        "Lendo os dados do aparelho.";
+
+
+    try {
+
+        const formData =
+            new FormData();
+
+
+        if (photo1) {
+            formData.append(
+                "photo1",
+                photo1
+            );
+        }
+
+
+        if (photo2) {
+            formData.append(
+                "photo2",
+                photo2
+            );
+        }
+
+
+        /*
+         * Por enquanto estamos testando iPhone.
+         * Depois isso será automático conforme
+         * a categoria escolhida no cadastro.
+         */
+        formData.append(
+            "category",
+            "IPHONE"
+        );
+
+
+        const response =
+            await fetch(
+                "/erp/units/gemini-read",
+                {
+                    method: "POST",
+                    body: formData,
+                    credentials: "same-origin"
+                }
+            );
+
+
+        const payload =
+            await response.json();
+
+
+        if (
+            !response.ok ||
+            !payload.success
+        ) {
+
+            throw new Error(
+                payload.error ||
+                "Falha na leitura pelo Gemini."
+            );
+        }
+
+
+        const data =
+            payload.data || {};
+
+
+        /*
+         * Validação local do IMEI.
+         * Mesmo a IA tendo lido,
+         * nosso sistema confere novamente.
+         */
+        function confirmedImei(value) {
+
+            if (!value) {
+                return "";
+            }
+
+            const imei =
+                onlyDigits(
+                    String(value)
+                );
+
+            if (
+                imei.length === 15 &&
+                validImei(imei)
+            ) {
+                return imei;
+            }
+
+            return "";
+        }
+
+
+        const imei1 =
+            confirmedImei(
+                data.imei_1
+            );
+
+        const imei2 =
+            confirmedImei(
+                data.imei_2
+            );
+
+
+        /*
+         * IMEI 1 vai SOMENTE para IMEI 1.
+         */
+        if (imei1) {
+
+            document
+                .getElementById("imei_1")
+                .value = imei1;
+        }
+
+
+        /*
+         * IMEI 2 vai SOMENTE para IMEI 2.
+         */
+        if (imei2) {
+
+            document
+                .getElementById("imei_2")
+                .value = imei2;
+        }
+
+
+        if (data.serial_number) {
+
+            document
+                .getElementById("serial_number")
+                .value =
+                    String(
+                        data.serial_number
+                    ).trim();
+        }
+
+
+        if (
+            data.battery_health !== null &&
+            data.battery_health !== undefined
+        ) {
+
+            const battery =
+                String(
+                    data.battery_health
+                ).replace(/\D/g, "");
+
+            if (
+                battery &&
+                Number(battery) >= 1 &&
+                Number(battery) <= 100
+            ) {
+
+                document
+                    .getElementById("battery_health")
+                    .value = battery;
+            }
+        }
+
+
+        /*
+         * Usa modelo + capacidade + cor
+         * para tentar localizar automaticamente
+         * o Produto Central.
+         */
+        const productText = [
+            data.brand,
+            data.model,
+            data.storage,
+            data.color
+        ]
+        .filter(Boolean)
+        .join(" ");
+
+
+        if (
+            productText &&
+            typeof autoSelectProductFromText ===
+                "function"
+        ) {
+
+            autoSelectProductFromText(
+                productText
+            );
+        }
+
+
+        const found = [];
+
+
+        if (data.model) {
+            found.push(
+                "Modelo: " +
+                data.model
+            );
+        }
+
+
+        if (data.storage) {
+            found.push(
+                "Capacidade: " +
+                data.storage
+            );
+        }
+
+
+        if (imei1) {
+            found.push(
+                "IMEI 1: " +
+                imei1
+            );
+        }
+
+
+        if (imei2) {
+            found.push(
+                "IMEI 2: " +
+                imei2
+            );
+        }
+
+
+        if (data.serial_number) {
+            found.push(
+                "Serial: " +
+                data.serial_number
+            );
+        }
+
+
+        if (data.battery_health) {
+            found.push(
+                "Bateria: " +
+                data.battery_health +
+                "%"
+            );
+        }
+
+
+        let message =
+            "<b>✅ Gemini concluiu a análise.</b><br><br>";
+
+
+        if (found.length) {
+
+            message +=
+                found.join("<br>");
+        }
+
+
+        /*
+         * Se a IA informou que alguma coisa
+         * não pôde ser confirmada.
+         */
+        if (
+            data.needs_new_photo ||
+            data.warning
+        ) {
+
+            message +=
+                "<br><br><b>⚠️ Atenção:</b> " +
+                (
+                    data.warning ||
+                    "Algum dado não pôde ser confirmado. Tire outra foto."
+                );
+        }
+
+
+        /*
+         * Se o Gemini devolveu um IMEI,
+         * mas ele não passou na nossa
+         * validação matemática, não aceitamos.
+         */
+        if (
+            data.imei_1 &&
+            !imei1
+        ) {
+
+            message +=
+                "<br><br>⚠️ IMEI 1 lido pela IA não passou na validação.";
+        }
+
+
+        if (
+            data.imei_2 &&
+            !imei2
+        ) {
+
+            message +=
+                "<br>⚠️ IMEI 2 lido pela IA não passou na validação.";
+        }
+
+
+        message +=
+            "<br><br>Confira os dados antes de salvar.";
+
+
+        result.innerHTML =
+            message;
+
+
+    } catch (error) {
+
+        console.error(
+            "Erro Gemini:",
+            error
+        );
+
+
+        result.innerHTML =
+            "<b>⚠️ Não foi possível analisar com o Gemini.</b><br>" +
+            String(
+                error.message ||
+                error
+            );
+    }
+}
+
+
+/*
+ * Qualquer uma das fotos pode iniciar a análise.
+ * Ao selecionar a segunda foto,
+ * as DUAS são enviadas juntas ao Gemini.
+ */
+if (devicePhoto) {
+
+    devicePhoto.addEventListener(
+        "change",
+        analyzePhotosWithGemini
+    );
+}
+
 
 if (modelSerialPhoto) {
 
     modelSerialPhoto.addEventListener(
         "change",
-        async function () {
-
-            const file =
-                this.files &&
-                this.files[0];
-
-            if (!file) {
-                return;
-            }
-
-            const result =
-                document.getElementById(
-                    "result"
-                );
-
-            result.innerHTML =
-                "<b>📷 Lendo Foto 2...</b><br>" +
-                "Procurando modelo e número de série.";
-
-            try {
-
-                const ocrResult =
-                    await Tesseract.recognize(
-                        file,
-                        "eng",
-                        {
-                            logger: function (m) {
-
-                                if (
-                                    m.status ===
-                                    "recognizing text"
-                                ) {
-
-                                    const percent =
-                                        Math.round(
-                                            m.progress *
-                                            100
-                                        );
-
-                                    result.innerHTML =
-                                        "<b>📷 Lendo Foto 2...</b><br>" +
-                                        percent +
-                                        "%";
-                                }
-                            }
-                        }
-                    );
-
-                const text =
-                    ocrResult.data.text || "";
-
-                const serial =
-                    findSerialNumber(text);
-
-                const selectedProduct =
-                    autoSelectProductFromText(
-                        text
-                    );
-
-                if (serial) {
-
-                    document
-                        .getElementById(
-                            "serial_number"
-                        )
-                        .value = serial;
-                }
-
-                const found = [];
-
-                if (serial) {
-                    found.push(
-                        "Número de série"
-                    );
-                }
-
-                if (selectedProduct) {
-                    found.push(
-                        "Produto selecionado: " +
-                        selectedProduct
-                    );
-                }
-
-                if (found.length) {
-
-                    result.innerHTML =
-                        "<b>✅ Foto 2 analisada.</b><br>" +
-                        found.join("<br>") +
-                        "<br><br>Confira os dados antes de salvar.";
-
-                } else {
-
-                    result.innerHTML =
-                        "<b>⚠️ Foto lida, mas não consegui identificar modelo ou número de série.</b><br>" +
-                        "Tire outra foto mais próxima da tela.";
-                }
-
-            } catch (error) {
-
-                console.error(
-                    "Erro OCR Foto 2:",
-                    error
-                );
-
-                result.innerHTML =
-                    "<b>Erro ao ler a Foto 2.</b><br>" +
-                    "Tente novamente.";
-            }
-        }
+        analyzePhotosWithGemini
     );
 }
             </script>
