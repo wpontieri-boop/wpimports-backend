@@ -13,6 +13,38 @@ def create_units_blueprint(get_db_connection):
 
     bp = Blueprint("erp_units", __name__)
 
+    
+    @bp.route("/erp/units/gemini-status")
+    def gemini_status():
+        try:
+            api_key = os.getenv("GEMINI_API_KEY")
+
+            if not api_key:
+                return jsonify({
+                    "success": False,
+                    "error": "GEMINI_API_KEY não configurada"
+                }), 500
+
+            client = genai.Client(
+                api_key=api_key
+            )
+
+            response = client.models.generate_content(
+                model="gemini-3.7-flash",
+                contents="Responda apenas com a palavra OK."
+            )
+
+            return jsonify({
+                "success": True,
+                "model": "gemini-3.7-flash",
+                "response": response.text.strip()
+            })
+
+        except Exception as exc:
+            return jsonify({
+                "success": False,
+                "error": str(exc)
+            }), 500
 
     # ==========================================================
     # STATUS DAS UNIDADES FÍSICAS
