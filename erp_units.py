@@ -588,11 +588,17 @@ def create_units_blueprint(get_db_connection):
                             );
                     }
                 }
-
         const devicePhoto = document.getElementById("device_photo");
 
         function onlyDigits(value) {
             return (value || "").replace(/\D/g, "");
+        }
+
+        function normalizeOcrDigits(value) {
+            return (value || "")
+                .replace(/[OQ]/gi, "0")
+                .replace(/[IL|]/gi, "1")
+                .replace(/\D/g, "");
         }
 
         function validImei(imei) {
@@ -621,26 +627,120 @@ def create_units_blueprint(get_db_connection):
 
         function findImeis(text) {
 
-            const candidates = text.match(
-                /(?:\d[\s\-]*){15}/g
-            ) || [];
-
             const imeis = [];
 
-            for (const candidate of candidates) {
+            function addImei(value) {
 
-                const imei = onlyDigits(candidate);
+                if (!value) {
+                    return;
+                }
 
-                if (
-                    imei.length === 15 &&
-                    validImei(imei) &&
-                    !imeis.includes(imei)
+                const digits = normalizeOcrDigits(value);
+
+                if (digits.length < 15) {
+                    return;
+                }
+
+                /*
+                 * Percorre possíveis blocos de 15 dígitos.
+                 * Assim conseguimos recuperar o IMEI mesmo quando
+                 * o OCR trouxe algum caractere ou número extra.
+                 */
+                for (
+                    let start = 0;
+                    start <= digits.length - 15;
+                    start++
                 ) {
-                    imeis.push(imei);
+
+                    const imei =
+                        digits.substring(
+                            start,
+                            start + 15
+                        );
+
+                    if (
+                        validImei(imei) &&
+                        !imeis.includes(imei)
+                    ) {
+                        imeis.push(imei);
+                    }
+
+                    if (imeis.length >= 2) {
+                        return;
+                    }
                 }
             }
 
-            return imeis;
+            /*
+             * PRIMEIRO:
+             * procura especificamente o número
+             * que aparece depois de IMEI 1.
+             */
+            const imei1Patterns = [
+                /IMEI\s*1\s*[:\-]?\s*([0-9OQIL|\s\-]{15,45})/i,
+                /IMEI1\s*[:\-]?\s*([0-9OQIL|\s\-]{15,45})/i
+            ];
+
+            for (const pattern of imei1Patterns) {
+
+                const match = text.match(pattern);
+
+                if (match && match[1]) {
+                    addImei(match[1]);
+                }
+
+                if (imeis.length >= 1) {
+                    break;
+                }
+            }
+
+            /*
+             * SEGUNDO:
+             * procura especificamente o número
+             * que aparece depois de IMEI 2.
+             */
+            const imei2Patterns = [
+                /IMEI\s*2\s*[:\-]?\s*([0-9OQIL|\s\-]{15,45})/i,
+                /IMEI2\s*[:\-]?\s*([0-9OQIL|\s\-]{15,45})/i
+            ];
+
+            for (const pattern of imei2Patterns) {
+
+                const match = text.match(pattern);
+
+                if (match && match[1]) {
+                    addImei(match[1]);
+                }
+
+                if (imeis.length >= 2) {
+                    break;
+                }
+            }
+
+            /*
+             * PLANO B:
+             * se o OCR não reconheceu os textos
+             * "IMEI 1" ou "IMEI 2", procura todos
+             * os números candidatos existentes na foto.
+             */
+            if (imeis.length < 2) {
+
+                const candidates =
+                    text.match(
+                        /(?:[0-9OQIL|][\s\-]*){15,20}/gi
+                    ) || [];
+
+                for (const candidate of candidates) {
+
+                    addImei(candidate);
+
+                    if (imeis.length >= 2) {
+                        break;
+                    }
+                }
+            }
+
+            return imeis.slice(0, 2);
         }
 
         function findSerialNumber(text) {
@@ -656,7 +756,9 @@ def create_units_blueprint(get_db_connection):
                 const match = text.match(pattern);
 
                 if (match && match[1]) {
-                    return match[1].trim();
+                    return match[1]
+                        .trim()
+                        .toUpperCase();
                 }
             }
 
@@ -678,9 +780,16 @@ def create_units_blueprint(get_db_connection):
 
                 if (match && match[1]) {
 
-                    const value = parseInt(match[1], 10);
+                    const value =
+                        parseInt(
+                            match[1],
+                            10
+                        );
 
-                    if (value >= 1 && value <= 100) {
+                    if (
+                        value >= 1 &&
+                        value <= 100
+                    ) {
                         return value;
                     }
                 }
@@ -700,7 +809,7 @@ def create_units_blueprint(get_db_connection):
         function findStorage(text) {
 
             const normalized =
-                text.toUpperCase();
+                (text || "").toUpperCase();
 
             const tb =
                 normalized.match(
@@ -725,7 +834,7 @@ def create_units_blueprint(get_db_connection):
 
             return "";
         }
-
+                
         function findProductFromPhoto(
             text,
             storage
