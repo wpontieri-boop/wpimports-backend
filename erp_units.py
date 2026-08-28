@@ -310,6 +310,8 @@ def create_units_blueprint(get_db_connection):
                         name,
                         condition_type,
                         condition_grade
+                        model,
+                        storage
                     FROM products
                     WHERE active = TRUE
                     ORDER BY name
@@ -407,18 +409,33 @@ def create_units_blueprint(get_db_connection):
                     WP Imports Hub
                 </p>
 
-                <label>Foto do aparelho / etiqueta</label>
-
+                <label>Foto 1 — IMEI 1 e IMEI 2</label>
+                
                 <input
                     type="file"
                     id="device_photo"
                     accept="image/*"
                     capture="environment"
                 >
-
+                
                 <div class="hint">
-                    A leitura automática por IA será conectada
-                    no próximo passo.
+                    Use a tela onde aparecem IMEI e IMEI2.
+                </div>
+                
+                <label style="margin-top:18px;">
+                    Foto 2 — Modelo e número de série
+                </label>
+                
+                <input
+                    type="file"
+                    id="model_serial_photo"
+                    accept="image/*"
+                    capture="environment"
+                >
+                
+                <div class="hint">
+                    Use a tela das Configurações onde aparecem
+                    o modelo e o número de série.
                 </div>
 
                 <label>Produto central</label>
@@ -431,7 +448,11 @@ def create_units_blueprint(get_db_connection):
 
                     {% for product in products %}
 
-                        <option value="{{ product[0] }}">
+                        <option
+                            value="{{ product[0] }}"
+                            data-model="{{ product[5] or '' }}"
+                            data-storage="{{ product[6] or '' }}"
+                        >
                             {{ product[2] }}
                             -
                             {{ product[1] }}
@@ -668,6 +689,120 @@ def create_units_blueprint(get_db_connection):
             return "";
         }
 
+        function normalizeProductText(value) {
+            return (value || "")
+                .toUpperCase()
+                .replace(/\s+/g, "")
+                .replace(/TB/g, "000GB")
+                .replace(/[^A-Z0-9]/g, "");
+        }
+
+        function findStorage(text) {
+
+            const normalized =
+                text.toUpperCase();
+
+            const tb =
+                normalized.match(
+                    /\b([124])\s*TB\b/
+                );
+
+            if (tb) {
+                return (
+                    parseInt(tb[1], 10) *
+                    1000
+                ) + "GB";
+            }
+
+            const gb =
+                normalized.match(
+                    /\b(32|64|128|256|512)\s*GB\b/
+                );
+
+            if (gb) {
+                return gb[1] + "GB";
+            }
+
+            return "";
+        }
+
+        function findProductFromPhoto(
+            text,
+            storage
+        ) {
+
+            const select =
+                document.getElementById(
+                    "product_id"
+                );
+
+            const normalizedText =
+                normalizeProductText(text);
+
+            const normalizedStorage =
+                normalizeProductText(storage);
+
+            let bestMatch = null;
+            let detectedModel = "";
+
+            for (
+                const option of select.options
+            ) {
+
+                if (!option.value) {
+                    continue;
+                }
+
+                const model =
+                    option.dataset.model || "";
+
+                const productStorage =
+                    option.dataset.storage || "";
+
+                if (!model) {
+                    continue;
+                }
+
+                const normalizedModel =
+                    normalizeProductText(model);
+
+                const optionStorage =
+                    normalizeProductText(
+                        productStorage
+                    );
+
+                const modelFound =
+                    normalizedText.includes(
+                        normalizedModel
+                    );
+
+                const storageFound =
+                    !normalizedStorage ||
+                    optionStorage.includes(
+                        normalizedStorage
+                    );
+
+                if (
+                    modelFound &&
+                    storageFound
+                ) {
+                    bestMatch = option;
+                    detectedModel = model;
+                    break;
+                }
+            }
+
+            if (bestMatch) {
+                select.value =
+                    bestMatch.value;
+            }
+
+            return {
+                found: Boolean(bestMatch),
+                model: detectedModel
+            };
+        }
+
         devicePhoto.addEventListener(
             "change",
             async function () {
@@ -714,6 +849,14 @@ def create_units_blueprint(get_db_connection):
 
                     const text =
                         ocrResult.data.text || "";
+                    const storage =
+                        findStorage(text);
+
+                    const productMatch =
+                        findProductFromPhoto(
+                            text,
+                            storage
+                        );                        
 
                     console.log(
                         "OCR WP Imports:",
@@ -758,6 +901,18 @@ def create_units_blueprint(get_db_connection):
                     }
 
                     let found = [];
+                    if (productMatch.model) {
+                        found.push(
+                            "modelo " +
+                            productMatch.model
+                        );
+                    }
+
+                    if (storage) {
+                        found.push(
+                            storage
+                        );
+                    }                    
 
                     if (imeis.length) {
                         found.push(
@@ -806,8 +961,222 @@ def create_units_blueprint(get_db_connection):
                         "Tente novamente.";
                 }
             }
-        );      
+        ); 
 
+        
+const modelSerialPhoto =
+    document.getElementById("model_serial_photo");
+
+
+function normalizeOcrText(value) {
+    return (value || "")
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .toUpperCase()
+        .replace(/[^A-Z0-9]+/g, " ")
+        .replace(/\s+/g, " ")
+        .trim();
+}
+
+
+function autoSelectProductFromText(text) {
+
+    const select =
+        document.getElementById("product_id");
+
+    if (!select) {
+        return "";
+    }
+
+    const normalizedText =
+        normalizeOcrText(text);
+
+    const storage =
+        findStorage(text);
+
+    let bestOption = null;
+    let bestScore = 0;
+
+    for (const option of select.options) {
+
+        if (!option.value) {
+            continue;
+        }
+
+        const optionText =
+            normalizeOcrText(
+                option.textContent || ""
+            );
+
+        const tokens =
+            optionText
+                .split(" ")
+                .filter(
+                    token =>
+                        token.length >= 2 &&
+                        ![
+                            "APPLE",
+                            "GB",
+                            "NOVO",
+                            "SEMINOVO",
+                            "RECONDICIONADO",
+                            "CAIXA",
+                            "ABERTA"
+                        ].includes(token)
+                );
+
+        let score = 0;
+
+        for (const token of tokens) {
+            if (normalizedText.includes(token)) {
+                score += 2;
+            }
+        }
+
+        if (
+            storage &&
+            optionText.includes(
+                normalizeOcrText(storage)
+            )
+        ) {
+            score += 4;
+        }
+
+        if (score > bestScore) {
+            bestScore = score;
+            bestOption = option;
+        }
+    }
+
+    if (bestOption && bestScore >= 4) {
+
+        select.value =
+            bestOption.value;
+
+        return (
+            bestOption.textContent || ""
+        ).trim();
+    }
+
+    return "";
+}
+
+
+if (modelSerialPhoto) {
+
+    modelSerialPhoto.addEventListener(
+        "change",
+        async function () {
+
+            const file =
+                this.files &&
+                this.files[0];
+
+            if (!file) {
+                return;
+            }
+
+            const result =
+                document.getElementById(
+                    "result"
+                );
+
+            result.innerHTML =
+                "<b>📷 Lendo Foto 2...</b><br>" +
+                "Procurando modelo e número de série.";
+
+            try {
+
+                const ocrResult =
+                    await Tesseract.recognize(
+                        file,
+                        "eng",
+                        {
+                            logger: function (m) {
+
+                                if (
+                                    m.status ===
+                                    "recognizing text"
+                                ) {
+
+                                    const percent =
+                                        Math.round(
+                                            m.progress *
+                                            100
+                                        );
+
+                                    result.innerHTML =
+                                        "<b>📷 Lendo Foto 2...</b><br>" +
+                                        percent +
+                                        "%";
+                                }
+                            }
+                        }
+                    );
+
+                const text =
+                    ocrResult.data.text || "";
+
+                const serial =
+                    findSerialNumber(text);
+
+                const selectedProduct =
+                    autoSelectProductFromText(
+                        text
+                    );
+
+                if (serial) {
+
+                    document
+                        .getElementById(
+                            "serial_number"
+                        )
+                        .value = serial;
+                }
+
+                const found = [];
+
+                if (serial) {
+                    found.push(
+                        "Número de série"
+                    );
+                }
+
+                if (selectedProduct) {
+                    found.push(
+                        "Produto selecionado: " +
+                        selectedProduct
+                    );
+                }
+
+                if (found.length) {
+
+                    result.innerHTML =
+                        "<b>✅ Foto 2 analisada.</b><br>" +
+                        found.join("<br>") +
+                        "<br><br>Confira os dados antes de salvar.";
+
+                } else {
+
+                    result.innerHTML =
+                        "<b>⚠️ Foto lida, mas não consegui identificar modelo ou número de série.</b><br>" +
+                        "Tire outra foto mais próxima da tela.";
+                }
+
+            } catch (error) {
+
+                console.error(
+                    "Erro OCR Foto 2:",
+                    error
+                );
+
+                result.innerHTML =
+                    "<b>Erro ao ler a Foto 2.</b><br>" +
+                    "Tente novamente.";
+            }
+        }
+    );
+}
             </script>
 
         </body>
