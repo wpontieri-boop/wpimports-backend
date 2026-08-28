@@ -182,14 +182,47 @@ Retorne SOMENTE JSON neste formato:
             )
 
 
-            response = client.models.generate_content(
-                model="gemini-3.7-flash",
-                contents=contents,
-                config=types.GenerateContentConfig(
-                    response_mime_type="application/json",
-                    temperature=0
-                )
-            )
+            models_to_try = [
+                "gemini-3.7-flash",
+                "gemini-3.6-flash"
+            ]
+
+            response = None
+            used_model = None
+            last_error = None
+
+            for model_name in models_to_try:
+
+                try:
+
+                    response = client.models.generate_content(
+                        model=model_name,
+                        contents=contents,
+                        config=types.GenerateContentConfig(
+                            response_mime_type="application/json"
+                        )
+                    )
+
+                    used_model = model_name
+                    break
+
+                except Exception as model_exc:
+
+                    last_error = model_exc
+                    error_text = str(model_exc).upper()
+
+                    temporary_error = (
+                        "503" in error_text
+                        or "UNAVAILABLE" in error_text
+                        or "429" in error_text
+                        or "RESOURCE_EXHAUSTED" in error_text
+                    )
+
+                    if not temporary_error:
+                        raise
+
+            if response is None:
+                raise last_error
 
 
             result = json.loads(
@@ -199,7 +232,7 @@ Retorne SOMENTE JSON neste formato:
 
             return jsonify({
                 "success": True,
-                "model": "gemini-3.7-flash",
+                "model": used_model,
                 "data": result
             })
 
