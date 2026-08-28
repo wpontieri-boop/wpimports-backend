@@ -487,6 +487,7 @@ def create_units_blueprint(get_db_connection):
 
             </div>
 
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@7/dist/tesseract.min.js"></script>
 
             <script>
 
@@ -569,76 +570,243 @@ def create_units_blueprint(get_db_connection):
 
         const devicePhoto = document.getElementById("device_photo");
 
-        devicePhoto.addEventListener("change", async function () {
+        function onlyDigits(value) {
+            return (value || "").replace(/\D/g, "");
+        }
 
-            const file = devicePhoto.files[0];
-
-            if (!file) {
-                return;
+        function validImei(imei) {
+            if (!/^\d{15}$/.test(imei)) {
+                return false;
             }
 
-            const result = document.getElementById("result");
+            let sum = 0;
 
-            result.innerHTML =
-                "<b>📷 Analisando foto do aparelho...</b>";
+            for (let i = 0; i < 15; i++) {
+                let digit = parseInt(imei[i], 10);
 
-            const formData = new FormData();
-            formData.append("photo", file);
+                if (i % 2 === 1) {
+                    digit *= 2;
 
-            try {
-
-                const response = await fetch(
-                    "/erp/units/read-photo",
-                    {
-                        method: "POST",
-                        body: formData
+                    if (digit > 9) {
+                        digit -= 9;
                     }
-                );
+                }
 
-                const data = await response.json();
+                sum += digit;
+            }
 
-                if (!response.ok || !data.success) {
+            return sum % 10 === 0;
+        }
 
-                    result.innerHTML =
-                        "<b>Não foi possível ler a foto.</b><br>" +
-                        (data.error || "Tente tirar outra foto.");
+        function findImeis(text) {
 
+            const candidates = text.match(
+                /(?:\d[\s\-]*){15}/g
+            ) || [];
+
+            const imeis = [];
+
+            for (const candidate of candidates) {
+
+                const imei = onlyDigits(candidate);
+
+                if (
+                    imei.length === 15 &&
+                    validImei(imei) &&
+                    !imeis.includes(imei)
+                ) {
+                    imeis.push(imei);
+                }
+            }
+
+            return imeis;
+        }
+
+        function findSerialNumber(text) {
+
+            const patterns = [
+                /serial\s*(?:number|no|nº|#)?\s*[:\-]?\s*([A-Z0-9\-]{5,30})/i,
+                /s\/n\s*[:\-]?\s*([A-Z0-9\-]{5,30})/i,
+                /n[uú]mero\s+de\s+s[eé]rie\s*[:\-]?\s*([A-Z0-9\-]{5,30})/i
+            ];
+
+            for (const pattern of patterns) {
+
+                const match = text.match(pattern);
+
+                if (match && match[1]) {
+                    return match[1].trim();
+                }
+            }
+
+            return "";
+        }
+
+        function findBatteryHealth(text) {
+
+            const patterns = [
+                /battery\s*health\s*[:\-]?\s*(\d{1,3})\s*%?/i,
+                /sa[uú]de\s+da\s+bateria\s*[:\-]?\s*(\d{1,3})\s*%?/i,
+                /maximum\s+capacity\s*[:\-]?\s*(\d{1,3})\s*%?/i,
+                /capacidade\s+m[aá]xima\s*[:\-]?\s*(\d{1,3})\s*%?/i
+            ];
+
+            for (const pattern of patterns) {
+
+                const match = text.match(pattern);
+
+                if (match && match[1]) {
+
+                    const value = parseInt(match[1], 10);
+
+                    if (value >= 1 && value <= 100) {
+                        return value;
+                    }
+                }
+            }
+
+            return "";
+        }
+
+        devicePhoto.addEventListener(
+            "change",
+            async function () {
+
+                const file = devicePhoto.files[0];
+
+                if (!file) {
                     return;
                 }
 
-                if (data.imei_1) {
-                    document.getElementById("imei_1").value =
-                        data.imei_1;
-                }
-
-                if (data.imei_2) {
-                    document.getElementById("imei_2").value =
-                        data.imei_2;
-                }
-
-                if (data.serial_number) {
-                    document.getElementById("serial_number").value =
-                        data.serial_number;
-                }
-
-                if (data.battery_health) {
-                    document.getElementById("battery_health").value =
-                        data.battery_health;
-                }
+                const result =
+                    document.getElementById("result");
 
                 result.innerHTML =
-                    "<b>✅ Foto analisada.</b><br>" +
-                    "Confira os dados antes de salvar.";
+                    "<b>📷 Lendo foto...</b><br>" +
+                    "Aguarde alguns segundos.";
 
-            } catch (error) {
+                try {
 
-                result.innerHTML =
-                    "<b>Erro ao analisar a foto.</b><br>" +
-                    "Tente novamente.";
+                    const ocrResult =
+                        await Tesseract.recognize(
+                            file,
+                            "eng",
+                            {
+                                logger: function (m) {
 
+                                    if (
+                                        m.status ===
+                                        "recognizing text"
+                                    ) {
+
+                                        const percent =
+                                            Math.round(
+                                                m.progress * 100
+                                            );
+
+                                        result.innerHTML =
+                                            "<b>📷 Lendo foto...</b><br>" +
+                                            percent + "%";
+                                    }
+                                }
+                            }
+                        );
+
+                    const text =
+                        ocrResult.data.text || "";
+
+                    console.log(
+                        "OCR WP Imports:",
+                        text
+                    );
+
+                    const imeis =
+                        findImeis(text);
+
+                    const serial =
+                        findSerialNumber(text);
+
+                    const battery =
+                        findBatteryHealth(text);
+
+                    if (imeis[0]) {
+                        document
+                            .getElementById("imei_1")
+                            .value = imeis[0];
+                    }
+
+                    if (imeis[1]) {
+                        document
+                            .getElementById("imei_2")
+                            .value = imeis[1];
+                    }
+
+                    if (serial) {
+                        document
+                            .getElementById(
+                                "serial_number"
+                            )
+                            .value = serial;
+                    }
+
+                    if (battery) {
+                        document
+                            .getElementById(
+                                "battery_health"
+                            )
+                            .value = battery;
+                    }
+
+                    let found = [];
+
+                    if (imeis.length) {
+                        found.push(
+                            imeis.length +
+                            " IMEI(s)"
+                        );
+                    }
+
+                    if (serial) {
+                        found.push("serial");
+                    }
+
+                    if (battery) {
+                        found.push(
+                            "bateria " +
+                            battery +
+                            "%"
+                        );
+                    }
+
+                    if (found.length) {
+
+                        result.innerHTML =
+                            "<b>✅ Foto analisada.</b><br>" +
+                            "Encontrado: " +
+                            found.join(", ") +
+                            ".<br>" +
+                            "Confira os dados antes de salvar.";
+
+                    } else {
+
+                        result.innerHTML =
+                            "<b>⚠️ Foto lida, mas não consegui identificar os dados.</b><br>" +
+                            "Tente outra foto mais próxima e sem reflexo.";
+                    }
+
+                } catch (error) {
+
+                    console.error(
+                        "Erro OCR:",
+                        error
+                    );
+
+                    result.innerHTML =
+                        "<b>Erro ao ler a foto.</b><br>" +
+                        "Tente novamente.";
+                }
             }
-
-        });
+        );      
 
             </script>
 
