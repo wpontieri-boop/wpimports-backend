@@ -229,7 +229,7 @@ Retorne SOMENTE JSON neste formato:
                     or "READ OPERATION" in error_text
                 )
 
-                    if not temporary_error:
+            if not temporary_error:
                         raise
 
             if response is None:
