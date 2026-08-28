@@ -567,6 +567,79 @@ def create_units_blueprint(get_db_connection):
                     }
                 }
 
+        const devicePhoto = document.getElementById("device_photo");
+
+        devicePhoto.addEventListener("change", async function () {
+
+            const file = devicePhoto.files[0];
+
+            if (!file) {
+                return;
+            }
+
+            const result = document.getElementById("result");
+
+            result.innerHTML =
+                "<b>📷 Analisando foto do aparelho...</b>";
+
+            const formData = new FormData();
+            formData.append("photo", file);
+
+            try {
+
+                const response = await fetch(
+                    "/erp/units/read-photo",
+                    {
+                        method: "POST",
+                        body: formData
+                    }
+                );
+
+                const data = await response.json();
+
+                if (!response.ok || !data.success) {
+
+                    result.innerHTML =
+                        "<b>Não foi possível ler a foto.</b><br>" +
+                        (data.error || "Tente tirar outra foto.");
+
+                    return;
+                }
+
+                if (data.imei_1) {
+                    document.getElementById("imei_1").value =
+                        data.imei_1;
+                }
+
+                if (data.imei_2) {
+                    document.getElementById("imei_2").value =
+                        data.imei_2;
+                }
+
+                if (data.serial_number) {
+                    document.getElementById("serial_number").value =
+                        data.serial_number;
+                }
+
+                if (data.battery_health) {
+                    document.getElementById("battery_health").value =
+                        data.battery_health;
+                }
+
+                result.innerHTML =
+                    "<b>✅ Foto analisada.</b><br>" +
+                    "Confira os dados antes de salvar.";
+
+            } catch (error) {
+
+                result.innerHTML =
+                    "<b>Erro ao analisar a foto.</b><br>" +
+                    "Tente novamente.";
+
+            }
+
+        });
+
             </script>
 
         </body>
