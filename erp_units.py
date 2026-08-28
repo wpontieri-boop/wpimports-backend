@@ -625,7 +625,7 @@ def create_units_blueprint(get_db_connection):
             return sum % 10 === 0;
         }
 
-        function findImeis(text) {
+function findImeis(text) {
 
             const imeis = [];
 
@@ -741,7 +741,7 @@ def create_units_blueprint(get_db_connection):
             }
 
             return imeis.slice(0, 2);
-        }
+        }        
 
         function findSerialNumber(text) {
 
