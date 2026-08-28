@@ -189,8 +189,8 @@ Retorne SOMENTE JSON neste formato:
 
 
             models_to_try = [
-                "gemini-3.7-flash",
-                "gemini-3.6-flash"
+                "gemini-3.6-flash",
+                "gemini-3.7-flash"
             ]
 
             response = None
@@ -205,9 +205,11 @@ Retorne SOMENTE JSON neste formato:
                         model=model_name,
                         contents=contents,
                         config=types.GenerateContentConfig(
-                            response_mime_type="application/json"
+                            response_mime_type="application/json",
+                            thinking_config=types.ThinkingConfig(
+                                thinking_level="low"
+                            )
                         )
-                    )
 
                     used_model = model_name
                     break
